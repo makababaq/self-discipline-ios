@@ -13,6 +13,11 @@ const timeColumns = [
   { id: 'minute', label: '分钟', options: numberOptions(0, 55, padTime, 5) }
 ];
 const napColumns = [{ id: 'duration', label: '时长', options: numberOptions(10, 180, (minutes) => `${minutes} 分钟`, 5) }];
+const macroTiles = [
+  { key: 'protein', label: '蛋白质', surface: 'bg-orange-50/80', text: 'text-orange-700', fill: 'bg-orange-400' },
+  { key: 'carbs', label: '碳水', surface: 'bg-amber-50/80', text: 'text-amber-700', fill: 'bg-amber-400' },
+  { key: 'fat', label: '脂肪', surface: 'bg-rose-50/80', text: 'text-rose-700', fill: 'bg-rose-400' }
+];
 
 function RecordPickerField({ label, value, onClick }) {
   return (
@@ -42,6 +47,7 @@ export function RecordPage({
   data,
   currentWeight,
   waterGoal,
+  macroTargets,
   onOpenFoodSheet,
   onDeleteMeal,
   onAddWater,
@@ -221,7 +227,7 @@ export function RecordPage({
         <div className="space-y-3">
           {/* 当日摄入与营养素汇总 */}
           <div className="rounded-2xl bg-white border border-slate-100 p-4 shadow-[0_3px_14px_rgba(15,23,42,0.03)]">
-            <div className="flex items-center justify-between">
+            <div className="flex items-end justify-between gap-2">
               <div>
                 <p className="text-[11px] font-medium text-slate-400">当日饮食总摄入</p>
                 <div className="flex items-baseline gap-1 mt-0.5">
@@ -231,21 +237,27 @@ export function RecordPage({
                   <span className="text-xs font-medium text-slate-400">kcal</span>
                 </div>
               </div>
-              <div className="flex gap-1.5">
-                <div className="bg-orange-50/80 rounded-xl px-2.5 py-1.5 text-center">
-                  <p className="text-[9px] text-orange-600/80 font-medium">蛋白质</p>
-                  <p className="text-[12px] font-bold text-slate-800 tabular-nums">{mealSummary.protein.toFixed(0)}g</p>
-                </div>
-                <div className="bg-amber-50/80 rounded-xl px-2.5 py-1.5 text-center">
-                  <p className="text-[9px] text-amber-600/80 font-medium">碳水</p>
-                  <p className="text-[12px] font-bold text-slate-800 tabular-nums">{mealSummary.carbs.toFixed(0)}g</p>
-                </div>
-                <div className="bg-rose-50/80 rounded-xl px-2.5 py-1.5 text-center">
-                  <p className="text-[9px] text-rose-500/80 font-medium">脂肪</p>
-                  <p className="text-[12px] font-bold text-slate-800 tabular-nums">{mealSummary.fat.toFixed(0)}g</p>
-                </div>
-              </div>
+              <p className="text-[10px] font-medium text-slate-500">已摄入 / 每日参考</p>
             </div>
+            <dl className="mt-3 grid grid-cols-3 gap-1.5" aria-label="三大营养素已摄入量与每日参考值">
+              {macroTiles.map(({ key, label, surface, text, fill }) => {
+                const consumed = mealSummary[key];
+                const reference = macroTargets[key];
+                const progress = reference > 0 ? Math.min(100, Math.max(0, consumed / reference * 100)) : 0;
+
+                return (
+                  <div key={key} className={`min-w-0 rounded-xl px-2 py-2 ${surface}`}>
+                    <dt className={`text-[10px] font-medium ${text}`}>{label}</dt>
+                    <dd className="mt-0.5 text-[11px] tabular-nums text-slate-600">
+                      <strong className="font-bold text-slate-900">{Number(consumed.toFixed(1))}</strong> / {reference} g
+                    </dd>
+                    <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/80" aria-hidden="true">
+                      <div className={`h-full rounded-full ${fill}`} style={{ width: `${progress}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </dl>
           </div>
 
           {/* 早餐 / 午餐 / 晚餐 / 加餐 */}

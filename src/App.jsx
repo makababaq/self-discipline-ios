@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, ClipboardList, LayoutGrid, Settings } from 'lucide-react';
+import { AlertCircle, CalendarDays, CheckCircle2, ClipboardList, LayoutGrid, Settings } from 'lucide-react';
 import { BottomSheet } from './components/CommonUI.jsx';
 import { AddFoodBottomSheet, AddWorkoutBottomSheet, CustomFoodBottomSheet, ImportJsonSheet } from './components/Modals.jsx';
 import { WheelPickerSheet } from './components/WheelPickerSheet.jsx';
 import { BUILTIN_FOODS } from './data/foodCatalog.js';
 import { createSeedData } from './data/seedData.js';
 import { OverviewPage } from './pages/OverviewPage.jsx';
+import { PlanningPage } from './pages/PlanningPage.jsx';
 import { RecordPage } from './pages/RecordPage.jsx';
 import { SettingsPage } from './pages/SettingsPage.jsx';
 import { initNativeUI, storageService, triggerLightHaptic } from './services/storageService.js';
 import { calculateAutoTargets } from './utils/calorieCalc.js';
 import { diffDays, formatDurationShort, getCurrentTimeStr, toLocalDateStr, uid } from './utils/dateAndCalc.js';
+import { getTrainingSchedule } from './utils/trainingPlan.js';
 import { weightPicker } from './utils/wheelOptions.js';
 
 export default function App() {
@@ -50,8 +52,7 @@ function Tracker({ initialData }) {
   const [data, setData] = useState(initialData);
   const [todayStr, setTodayStr] = useState(toLocalDateStr);
 
-  // 三大核心 Tab 与记录子页签
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'record' | 'settings'
+  const [activeTab, setActiveTab] = useState('overview');
   const [recordSubTab, setRecordSubTab] = useState('meals'); // 'meals' | 'water' | 'workout' | 'sleepWeight'
   const [selectedDate, setSelectedDate] = useState(todayStr);
 
@@ -128,6 +129,7 @@ function Tracker({ initialData }) {
     ...data.settings.profile,
     currentWeight: latestWeight
   }), [data.settings.profile, latestWeight]);
+  const trainingToday = getTrainingSchedule(data.trainingPlan, data.settings.cycleStartDate, todayStr);
 
   // 概况页派生统计
   const overviewStats = useMemo(() => {
@@ -273,6 +275,10 @@ function Tracker({ initialData }) {
     setData((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }));
   };
 
+  const updateTrainingPlan = (update) => {
+    setData((prev) => ({ ...prev, trainingPlan: update(prev.trainingPlan) }));
+  };
+
   const updateProfile = (patch) => {
     setData((prev) => ({
       ...prev,
@@ -355,17 +361,19 @@ function Tracker({ initialData }) {
         </div>
       )}
 
-      <main className="min-h-0 flex-1 overflow-y-auto overscroll-none no-scrollbar pb-4">
+      <main key={activeTab} className="min-h-0 flex-1 overflow-y-auto overscroll-none no-scrollbar pb-4">
         {activeTab === 'overview' && (
           <OverviewPage
             todayStr={todayStr}
             settings={data.settings}
             stats={overviewStats}
             targets={targets}
+            trainingToday={trainingToday}
+            trainingDayCount={data.trainingPlan.days.length}
             onQuickWater={(ml) => addWaterLog(ml, `快捷饮水 +${ml}ml`, todayStr)}
             onOpenWeight={() => setShowWeightSheet(true)}
             onJumpRecord={jumpToRecord}
-            onJumpSettings={() => setActiveTab('settings')}
+            onJumpPlanning={() => setActiveTab('planning')}
           />
         )}
 
@@ -379,6 +387,7 @@ function Tracker({ initialData }) {
             data={data}
             currentWeight={latestWeight}
             waterGoal={targets.recommendedWater}
+            macroTargets={targets.macros}
             onOpenFoodSheet={(mealType) => setFoodSheetMeal(mealType)}
             onDeleteMeal={deleteMealLog}
             onAddWater={(ml, label) => addWaterLog(ml, label, selectedDate)}
@@ -392,12 +401,22 @@ function Tracker({ initialData }) {
           />
         )}
 
+        {activeTab === 'planning' && (
+          <PlanningPage
+            settings={data.settings}
+            todayStr={todayStr}
+            trainingPlan={data.trainingPlan}
+            onUpdateSettings={updateSettings}
+            onUpdateTrainingPlan={updateTrainingPlan}
+            showToast={showToast}
+          />
+        )}
+
         {activeTab === 'settings' && (
           <SettingsPage
             settings={data.settings}
             targets={targets}
             currentWeight={latestWeight}
-            todayStr={todayStr}
             customFoods={data.customFoods}
             builtinCount={BUILTIN_FOODS.length}
             onUpdateSettings={updateSettings}
@@ -408,20 +427,19 @@ function Tracker({ initialData }) {
             onCopyJSON={handleCopyJSON}
             onOpenImport={() => setShowImportModal(true)}
             onOpenReset={() => setShowResetModal(true)}
-            showToast={showToast}
           />
         )}
       </main>
 
-      {/* 底部 3-Tab iOS 毛玻璃导航栏 */}
       <nav
         aria-label="主导航"
         className="app-navigation shrink-0 z-30 bg-white/[0.88] backdrop-blur-xl border-t border-slate-200/70"
       >
-        <div className="grid grid-cols-3 px-4 pt-2 pb-1">
+        <div className="grid grid-cols-4 px-4 pt-2 pb-1">
           {[
             { id: 'overview', label: '概况', icon: LayoutGrid },
             { id: 'record', label: '记录', icon: ClipboardList },
+            { id: 'planning', label: '规划', icon: CalendarDays },
             { id: 'settings', label: '设置', icon: Settings }
           ].map((tab) => {
             const Icon = tab.icon;

@@ -1,7 +1,8 @@
 import { DEFAULT_PROFILE } from '../utils/calorieCalc.js';
 import { addDays, toLocalDateStr } from '../utils/dateAndCalc.js';
+import { createTrainingPlan } from '../utils/trainingPlan.js';
 
-export const DATA_VERSION = 3;
+export const DATA_VERSION = 4;
 
 export function createSeedData() {
   const cycleStartDate = toLocalDateStr();
@@ -18,6 +19,7 @@ export function createSeedData() {
       targetWeightKg: 58.5,
       dailySleepGoalHours: 7.5
     },
+    trainingPlan: createTrainingPlan(),
     customFoods: [],
     mealLogs: [],
     waterLogs: [],

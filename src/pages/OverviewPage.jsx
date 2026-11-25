@@ -1,9 +1,12 @@
-import { Flame, Droplets, Moon, Scale, Sparkles, Clock, ArrowRight, Star } from 'lucide-react';
+import { Flame, Droplets, Moon, Scale, Sparkles, Clock, ArrowRight, Star, Dumbbell, ChevronRight } from 'lucide-react';
 import { SLEEP_QUALITY_LABELS } from '../data/exercisePresets.js';
 import { formatChineseHeaderDate, formatDurationShort } from '../utils/dateAndCalc.js';
 import { CalorieRing } from '../components/CommonUI.jsx';
 
-export function OverviewPage({ todayStr, settings, stats, targets, onQuickWater, onOpenWeight, onJumpRecord, onJumpSettings }) {
+export function OverviewPage({
+  todayStr, settings, stats, targets, trainingToday, trainingDayCount,
+  onQuickWater, onOpenWeight, onJumpRecord, onJumpPlanning
+}) {
   const sleepTargetMin = Math.round(settings.dailySleepGoalHours * 60);
   const sleepMet = stats.lastSleep && stats.lastSleep.durationMin >= sleepTargetMin;
   const { targetCalories, targetDeficit, goalLabel, recommendedWater, baselineTdee } = targets;
@@ -41,7 +44,7 @@ export function OverviewPage({ todayStr, settings, stats, targets, onQuickWater,
 
       {/* Card 1: 自律期限倒计时 (Slate / Amber) */}
       <section
-        onClick={onJumpSettings}
+        onClick={onJumpPlanning}
         className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-4.5 shadow-[0_10px_28px_-10px_rgba(15,23,42,0.45)] cursor-pointer active:scale-[0.99] transition"
       >
         <div className="absolute -right-8 -top-10 w-36 h-36 rounded-full bg-amber-400/15 blur-2xl pointer-events-none" />
@@ -83,6 +86,28 @@ export function OverviewPage({ todayStr, settings, stats, targets, onQuickWater,
           </div>
         </div>
       </section>
+
+      <button
+        type="button"
+        onClick={onJumpPlanning}
+        className="flex w-full items-center gap-3 rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-[0_3px_16px_rgba(15,23,42,0.03)] transition active:scale-[0.99]"
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+          <Dumbbell className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[11px] font-medium text-slate-500">今日训练计划</span>
+          <span className="block text-sm font-bold text-slate-900">
+            {trainingToday.day ? trainingToday.day.parts.join(' · ') : `训练循环将在 ${trainingToday.daysUntilStart} 天后开始`}
+          </span>
+        </span>
+        {trainingToday.day && (
+          <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 tabular-nums">
+            第 {trainingToday.index + 1} / {trainingDayCount} 天
+          </span>
+        )}
+        <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+      </button>
 
       {/* Card 2: 当日总热量（净热量 = 摄入 - 训练消耗）与目标热量对比 (Warm Coral/Orange) */}
       <section

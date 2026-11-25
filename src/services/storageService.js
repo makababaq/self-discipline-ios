@@ -6,10 +6,12 @@ import { Share } from '@capacitor/share';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { createSeedData, DATA_VERSION } from '../data/seedData.js';
 import { DEFAULT_PROFILE, GOAL_PRESETS } from '../utils/calorieCalc.js';
+import { createTrainingPlan } from '../utils/trainingPlan.js';
 
 export const STORAGE_KEY = 'discipline_ios_tracker_v2';
 
 const isText = (value) => typeof value === 'string';
+const isNonEmptyText = (value) => isText(value) && value.trim().length > 0;
 const isNumber = Number.isFinite;
 const isPositive = (value) => isNumber(value) && value > 0;
 const isDate = (value) => isText(value) && /^\d{4,}-\d{2}-\d{2}$/.test(value);
@@ -62,9 +64,19 @@ function hasFields(value, fields) {
   return isObject(value) && Object.entries(fields).every(([key, check]) => check(value[key]));
 }
 
+function isTrainingPlan(value) {
+  if (!isObject(value) || !Array.isArray(value.days) || value.days.length === 0 || !Number.isSafeInteger(value.offsetDays)) {
+    return false;
+  }
+  return value.days.every((day) =>
+    isObject(day) && isNonEmptyText(day.id) && Array.isArray(day.parts) && day.parts.length > 0 &&
+    day.parts.every(isNonEmptyText) && new Set(day.parts).size === day.parts.length
+  ) && new Set(value.days.map(({ id }) => id)).size === value.days.length;
+}
+
 function decodeBackup(raw) {
   const data = JSON.parse(raw.replace(/^\uFEFF/, ''));
-  if (!isObject(data) || ![2, DATA_VERSION].includes(data.version) || !hasFields(data.settings, settingsFields)) {
+  if (!isObject(data) || ![2, 3, DATA_VERSION].includes(data.version) || !hasFields(data.settings, settingsFields)) {
     throw new Error('备份缺少有效的版本或设置');
   }
 
@@ -74,18 +86,28 @@ function decodeBackup(raw) {
     }
   }
 
-  if (data.version === DATA_VERSION) {
-    if (!hasFields(data.settings.profile, profileFields)) throw new Error('备份缺少有效的个人资料');
-    return { data, migrated: false };
+  let settings = data.settings;
+  if (data.version === 2) {
+    const { currentWeightKg, dailyCalorieGoal, dailyWaterGoalMl, ...retainedSettings } = settings;
+    settings = {
+      ...retainedSettings,
+      profile: {
+        ...DEFAULT_PROFILE,
+        referenceWeight: isPositive(currentWeightKg) ? currentWeightKg : DEFAULT_PROFILE.referenceWeight
+      }
+    };
+  } else if (!hasFields(settings.profile, profileFields)) {
+    throw new Error('备份缺少有效的个人资料');
   }
 
-  const { currentWeightKg, dailyCalorieGoal, dailyWaterGoalMl, ...settings } = data.settings;
-  const profile = {
-    ...DEFAULT_PROFILE,
-    referenceWeight: isPositive(currentWeightKg) ? currentWeightKg : DEFAULT_PROFILE.referenceWeight
-  };
+  const trainingPlan = data.version !== DATA_VERSION && data.trainingPlan === undefined
+    ? createTrainingPlan()
+    : data.trainingPlan;
+  if (!isTrainingPlan(trainingPlan)) throw new Error('备份缺少有效的训练安排');
+  if (data.version === DATA_VERSION) return { data, migrated: false };
+
   return {
-    data: { ...data, version: DATA_VERSION, settings: { ...settings, profile } },
+    data: { ...data, version: DATA_VERSION, settings, trainingPlan },
     migrated: true
   };
 }

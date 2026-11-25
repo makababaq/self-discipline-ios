@@ -15,11 +15,13 @@ function positiveModulo(value, count) {
 
 export function getTrainingSchedule(trainingPlan, cycleStartDate, todayStr) {
   const elapsed = diffDays(cycleStartDate, todayStr);
-  if (elapsed < 0) return { index: -1, day: null, daysUntilStart: -elapsed };
+  if (elapsed < 0) return { index: -1, day: null, daysUntilStart: -elapsed, status: 'upcoming' };
 
   const { days, offsetDays } = trainingPlan;
   const index = positiveModulo(elapsed % days.length + offsetDays % days.length, days.length);
-  return { index, day: days[index], daysUntilStart: 0 };
+  const day = days[index];
+  const status = day.parts.length === 1 && day.parts[0] === '休息' ? 'rest' : 'train';
+  return { index, day, daysUntilStart: 0, status };
 }
 
 export function offsetForTrainingDay(trainingPlan, cycleStartDate, todayStr, targetIndex) {

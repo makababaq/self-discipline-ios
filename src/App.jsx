@@ -4,14 +4,16 @@ import { BottomSheet } from './components/CommonUI.jsx';
 import { AddFoodBottomSheet, AddWorkoutBottomSheet, CustomFoodBottomSheet, ImportJsonSheet } from './components/Modals.jsx';
 import { WheelPickerSheet } from './components/WheelPickerSheet.jsx';
 import { BUILTIN_FOODS } from './data/foodCatalog.js';
+import { MEAL_SECTIONS } from './data/exercisePresets.js';
 import { createSeedData } from './data/seedData.js';
 import { OverviewPage } from './pages/OverviewPage.jsx';
 import { PlanningPage } from './pages/PlanningPage.jsx';
 import { RecordPage } from './pages/RecordPage.jsx';
 import { SettingsPage } from './pages/SettingsPage.jsx';
-import { initNativeUI, storageService, triggerLightHaptic } from './services/storageService.js';
+import { initNativeUI, storageService } from './services/storageService.js';
 import { calculateAutoTargets } from './utils/calorieCalc.js';
-import { diffDays, formatDurationShort, getCurrentTimeStr, toLocalDateStr, uid } from './utils/dateAndCalc.js';
+import { addDays, diffDays, formatDurationShort, getCurrentTimeStr, toLocalDateStr, uid } from './utils/dateAndCalc.js';
+import { haptic } from './utils/haptics.js';
 import { getTrainingSchedule } from './utils/trainingPlan.js';
 import { weightPicker } from './utils/wheelOptions.js';
 
@@ -130,6 +132,10 @@ function Tracker({ initialData }) {
     currentWeight: latestWeight
   }), [data.settings.profile, latestWeight]);
   const trainingToday = getTrainingSchedule(data.trainingPlan, data.settings.cycleStartDate, todayStr);
+  const previousDayMeals = useMemo(() => {
+    const yesterdayStr = addDays(selectedDate, -1);
+    return data.mealLogs.filter((meal) => meal.date === yesterdayStr);
+  }, [data.mealLogs, selectedDate]);
 
   // 概况页派生统计
   const overviewStats = useMemo(() => {
@@ -144,7 +150,8 @@ function Tracker({ initialData }) {
 
     // 2. 今日净热量
     const todayIntake = mealLogs.filter((m) => m.date === todayStr).reduce((s, m) => s + m.calories, 0);
-    const todayBurned = workoutLogs.filter((w) => w.date === todayStr).reduce((s, w) => s + w.caloriesBurned, 0);
+    const todayWorkouts = workoutLogs.filter((workout) => workout.date === todayStr);
+    const todayBurned = todayWorkouts.reduce((sum, workout) => sum + workout.caloriesBurned, 0);
     const netCalories = todayIntake - todayBurned;
 
     // 3. 今日饮水
@@ -168,6 +175,7 @@ function Tracker({ initialData }) {
       remainingDays,
       cyclePercent,
       todayIntake,
+      todayWorkouts,
       todayBurned,
       netCalories,
       todayWater,
@@ -179,48 +187,76 @@ function Tracker({ initialData }) {
     };
   }, [data, latestWeight, targets.recommendedWater, todayStr, weightHistory]);
 
-  // 快捷页面跳转
+  const changeTab = (tab) => {
+    if (tab === activeTab) return;
+    setActiveTab(tab);
+    void haptic.tap();
+  };
+
   const jumpToRecord = (subTab, date = todayStr) => {
     setSelectedDate(date);
     setRecordSubTab(subTab);
-    setActiveTab('record');
+    changeTab('record');
   };
 
   // ---- CRUD 操作 ----
   const addWaterLog = (ml, label = '饮水记录', targetDate = selectedDate) => {
     const val = parseInt(ml, 10);
     if (!val || val <= 0) return;
+    const previousMl = data.waterLogs.reduce((sum, log) => log.date === targetDate ? sum + log.ml : sum, 0);
+    const reachedGoal = previousMl < targets.recommendedWater && previousMl + val >= targets.recommendedWater;
+    const entry = { id: uid('w'), date: targetDate, ml: val, time: getCurrentTimeStr(), label };
     setData((prev) => ({
       ...prev,
-      waterLogs: [{ id: uid('w'), date: targetDate, ml: val, time: getCurrentTimeStr(), label }, ...prev.waterLogs]
+      waterLogs: [entry, ...prev.waterLogs]
     }));
-    void triggerLightHaptic();
+    void haptic.water(reachedGoal);
     showToast(`已记录饮水 +${val}ml`);
   };
 
   const deleteWaterLog = (id) => {
     setData((prev) => ({ ...prev, waterLogs: prev.waterLogs.filter((w) => w.id !== id) }));
+    void haptic.delete();
     showToast('已删除饮水记录');
   };
 
   const addMealLog = (entry) => {
-    setData((prev) => ({ ...prev, mealLogs: [...prev.mealLogs, { ...entry, id: uid('m') }] }));
-    void triggerLightHaptic();
+    const saved = { ...entry, id: uid('m') };
+    setData((prev) => ({ ...prev, mealLogs: [...prev.mealLogs, saved] }));
+    void haptic.meal(false);
     showToast(`已添加 ${entry.name} (${entry.calories} kcal)`);
+  };
+
+  const copyPreviousMeal = (mealType) => {
+    const copies = previousDayMeals.filter((meal) => meal.mealType === mealType).map((meal) => ({
+      ...meal,
+      id: uid('m'),
+      date: selectedDate
+    }));
+    if (!copies.length) return;
+    const mealLabel = MEAL_SECTIONS.find((section) => section.key === mealType)?.label || '饮食';
+    setData((prev) => ({ ...prev, mealLogs: [...prev.mealLogs, ...copies] }));
+    void haptic.meal(true);
+    showToast(`已复制昨日${mealLabel}（${copies.length}项）`);
   };
 
   const deleteMealLog = (id) => {
     setData((prev) => ({ ...prev, mealLogs: prev.mealLogs.filter((m) => m.id !== id) }));
+    void haptic.delete();
     showToast('已移除饮食记录');
   };
 
   const addWorkoutLog = (entry) => {
-    setData((prev) => ({ ...prev, workoutLogs: [{ ...entry, id: uid('wk') }, ...prev.workoutLogs] }));
+    const firstCompleteToday = entry.date === todayStr && trainingToday.status === 'train' && overviewStats.todayWorkouts.length === 0;
+    const saved = { ...entry, id: uid('wk') };
+    setData((prev) => ({ ...prev, workoutLogs: [saved, ...prev.workoutLogs] }));
+    void haptic.workout(firstCompleteToday);
     showToast(`已记录 ${entry.name} (-${entry.caloriesBurned} kcal)`);
   };
 
   const deleteWorkoutLog = (id) => {
     setData((prev) => ({ ...prev, workoutLogs: prev.workoutLogs.filter((w) => w.id !== id) }));
+    void haptic.delete();
     showToast('已删除训练记录');
   };
 
@@ -256,6 +292,7 @@ function Tracker({ initialData }) {
 
   const deleteWeightLog = (id) => {
     setData((prev) => ({ ...prev, weightLogs: prev.weightLogs.filter((w) => w.id !== id) }));
+    void haptic.delete();
     showToast('已删除体重记录');
   };
 
@@ -369,11 +406,10 @@ function Tracker({ initialData }) {
             stats={overviewStats}
             targets={targets}
             trainingToday={trainingToday}
-            trainingDayCount={data.trainingPlan.days.length}
             onQuickWater={(ml) => addWaterLog(ml, `快捷饮水 +${ml}ml`, todayStr)}
             onOpenWeight={() => setShowWeightSheet(true)}
             onJumpRecord={jumpToRecord}
-            onJumpPlanning={() => setActiveTab('planning')}
+            onJumpPlanning={() => changeTab('planning')}
           />
         )}
 
@@ -381,14 +417,19 @@ function Tracker({ initialData }) {
           <RecordPage
             todayStr={todayStr}
             selectedDate={selectedDate}
-            onChangeDate={setSelectedDate}
+            onChangeDate={(date) => {
+              setSelectedDate(date);
+              void haptic.tap();
+            }}
             subTab={recordSubTab}
             onChangeSubTab={setRecordSubTab}
             data={data}
+            previousDayMeals={previousDayMeals}
             currentWeight={latestWeight}
             waterGoal={targets.recommendedWater}
             macroTargets={targets.macros}
             onOpenFoodSheet={(mealType) => setFoodSheetMeal(mealType)}
+            onCopyPreviousMeal={copyPreviousMeal}
             onDeleteMeal={deleteMealLog}
             onAddWater={(ml, label) => addWaterLog(ml, label, selectedDate)}
             onDeleteWater={deleteWaterLog}
@@ -403,6 +444,8 @@ function Tracker({ initialData }) {
 
         {activeTab === 'planning' && (
           <PlanningPage
+            data={data}
+            targets={targets}
             settings={data.settings}
             todayStr={todayStr}
             trainingPlan={data.trainingPlan}
@@ -448,10 +491,7 @@ function Tracker({ initialData }) {
               <button
                 key={tab.id}
                 aria-current={active ? 'page' : undefined}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  if (!active) void triggerLightHaptic();
-                }}
+                onClick={() => changeTab(tab.id)}
                 className="flex flex-col items-center justify-center py-0.5 gap-1 active:scale-95 transition-transform"
               >
                 <div
@@ -475,7 +515,9 @@ function Tracker({ initialData }) {
         open={Boolean(foodSheetMeal)}
         mealType={foodSheetMeal}
         selectedDate={selectedDate}
+        todayStr={todayStr}
         allFoods={allFoods}
+        mealLogs={data.mealLogs}
         onClose={() => setFoodSheetMeal(null)}
         onAddMeal={(entry) => {
           addMealLog(entry);
@@ -483,7 +525,7 @@ function Tracker({ initialData }) {
         }}
         onOpenCreateCustom={() => {
           setFoodSheetMeal(null);
-          setActiveTab('settings');
+          changeTab('settings');
           setShowCustomFoodSheet(true);
         }}
       />

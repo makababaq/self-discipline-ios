@@ -1,10 +1,49 @@
-import { Flame, Droplets, Moon, Scale, Sparkles, Clock, ArrowRight, Star, Dumbbell, ChevronRight } from 'lucide-react';
+import { Flame, Droplets, Moon, Scale, Sparkles, Clock, ArrowRight, Star, Dumbbell, ChevronRight, CircleCheck } from 'lucide-react';
 import { SLEEP_QUALITY_LABELS } from '../data/exercisePresets.js';
 import { formatChineseHeaderDate, formatDurationShort } from '../utils/dateAndCalc.js';
 import { CalorieRing } from '../components/CommonUI.jsx';
 
+function TodayTrainingHint({ training, workoutLogged, todayBurned, onOpenTraining }) {
+  let text;
+  let Icon;
+  if (training.status === 'upcoming') {
+    text = `训练循环将在 ${training.daysUntilStart} 天后开始`;
+    Icon = Clock;
+  } else if (training.status === 'rest') {
+    text = workoutLogged ? `休息日加练（-${todayBurned} kcal）` : '今日休息日 · 好好恢复与拉伸';
+    Icon = workoutLogged ? CircleCheck : Moon;
+  } else {
+    const parts = training.day.parts.join(' · ');
+    text = workoutLogged ? `今日已完成 · ${parts}（-${todayBurned} kcal）` : `今日训练：${parts}`;
+    Icon = workoutLogged ? CircleCheck : Dumbbell;
+  }
+
+  const hasAction = training.status === 'train' || (training.status === 'rest' && workoutLogged);
+  const style = `flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-xs font-semibold ${
+    workoutLogged && hasAction ? 'border-emerald-300/20 bg-emerald-400/10 text-emerald-100' : 'border-white/10 bg-white/5 text-slate-200'
+  }`;
+  const content = (
+    <>
+      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <span className="min-w-0 flex-1 tabular-nums">{text}</span>
+    </>
+  );
+
+  if (!hasAction) return <div className={style}>{content}</div>;
+  return (
+    <button
+      type="button"
+      onClick={onOpenTraining}
+      className={`${style} pointer-events-auto transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300`}
+    >
+      {content}
+      <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+    </button>
+  );
+}
+
 export function OverviewPage({
-  todayStr, settings, stats, targets, trainingToday, trainingDayCount,
+  todayStr, settings, stats, targets, trainingToday,
   onQuickWater, onOpenWeight, onJumpRecord, onJumpPlanning
 }) {
   const sleepTargetMin = Math.round(settings.dailySleepGoalHours * 60);
@@ -43,12 +82,15 @@ export function OverviewPage({
       </header>
 
       {/* Card 1: 自律期限倒计时 (Slate / Amber) */}
-      <section
-        onClick={onJumpPlanning}
-        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-4.5 shadow-[0_10px_28px_-10px_rgba(15,23,42,0.45)] cursor-pointer active:scale-[0.99] transition"
-      >
+      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white shadow-[0_10px_28px_-10px_rgba(15,23,42,0.45)] active:scale-[0.99] transition">
         <div className="absolute -right-8 -top-10 w-36 h-36 rounded-full bg-amber-400/15 blur-2xl pointer-events-none" />
-        <div className="relative z-10 p-4">
+        <button
+          type="button"
+          aria-label="打开自律规划"
+          onClick={onJumpPlanning}
+          className="absolute inset-0 rounded-2xl focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300"
+        />
+        <div className="pointer-events-none relative z-10 p-4">
           <div className="flex items-center justify-between">
             <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-300 bg-amber-400/15 px-2.5 py-1 rounded-full">
               <Sparkles className="w-3 h-3" />
@@ -84,30 +126,16 @@ export function OverviewPage({
             </div>
             <span className="text-[10px] font-bold text-amber-300 tabular-nums">{stats.cyclePercent}%</span>
           </div>
+          <div className="mt-3.5">
+            <TodayTrainingHint
+              training={trainingToday}
+              workoutLogged={stats.todayWorkouts.length > 0}
+              todayBurned={stats.todayBurned}
+              onOpenTraining={() => onJumpRecord('workout')}
+            />
+          </div>
         </div>
       </section>
-
-      <button
-        type="button"
-        onClick={onJumpPlanning}
-        className="flex w-full items-center gap-3 rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-[0_3px_16px_rgba(15,23,42,0.03)] transition active:scale-[0.99]"
-      >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-          <Dumbbell className="h-4 w-4" aria-hidden="true" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[11px] font-medium text-slate-500">今日训练计划</span>
-          <span className="block text-sm font-bold text-slate-900">
-            {trainingToday.day ? trainingToday.day.parts.join(' · ') : `训练循环将在 ${trainingToday.daysUntilStart} 天后开始`}
-          </span>
-        </span>
-        {trainingToday.day && (
-          <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 tabular-nums">
-            第 {trainingToday.index + 1} / {trainingDayCount} 天
-          </span>
-        )}
-        <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
-      </button>
 
       {/* Card 2: 当日总热量（净热量 = 摄入 - 训练消耗）与目标热量对比 (Warm Coral/Orange) */}
       <section

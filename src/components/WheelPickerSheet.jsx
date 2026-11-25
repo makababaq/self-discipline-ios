@@ -1,4 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react';
+import { haptic, startHapticSelection } from '../utils/haptics.js';
 import { BottomSheet } from './CommonUI.jsx';
 import './WheelPickerSheet.css';
 
@@ -49,8 +50,10 @@ function WheelColumn({ column, value, onChange, tracks }) {
   }, [selectedIndex]);
 
   function updateSelection(index) {
+    const indexChanged = observedIndex.current !== index;
     observedIndex.current = index;
     const option = options[index];
+    if (option && indexChanged) void haptic.tick();
     if (option && option.value !== value) onChange(id, option.value);
   }
 
@@ -117,6 +120,8 @@ function PickerContent({ columns, initialValues, onClose, onConfirm }) {
   const tracks = useRef(new Map());
   const content = useRef(null);
   const visibleColumns = getColumns(columns, draft);
+
+  useLayoutEffect(startHapticSelection, []);
 
   useLayoutEffect(() => {
     const previousFocus = document.activeElement;

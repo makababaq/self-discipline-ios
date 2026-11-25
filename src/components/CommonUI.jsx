@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { X } from 'lucide-react';
+import { prepareWeightTrend } from '../utils/weightTrend.js';
 
 /** 概况页净热量环形进度图 */
 export const CalorieRing = ({ net, goal }) => {
@@ -46,11 +47,18 @@ export const CalorieRing = ({ net, goal }) => {
   );
 };
 
+function smoothWeightPath(points) {
+  return points.map(({ x, y }, index) => {
+    if (index === 0) return `M ${x.toFixed(1)} ${y.toFixed(1)}`;
+    const previous = points[index - 1];
+    const midX = ((previous.x + x) / 2).toFixed(1);
+    return `C ${midX} ${previous.y.toFixed(1)} ${midX} ${y.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(' ');
+}
+
 /** 体重趋势响应式 SVG 折线图 */
 export const WeightSparkline = ({ logs, targetWeight }) => {
-  const sorted = useMemo(() => {
-    return [...logs].sort((a, b) => a.date.localeCompare(b.date)).slice(-10);
-  }, [logs]);
+  const sorted = useMemo(() => prepareWeightTrend(logs).slice(-10), [logs]);
 
   if (sorted.length === 0) {
     return (
@@ -65,7 +73,7 @@ export const WeightSparkline = ({ logs, targetWeight }) => {
   const padX = 18;
   const padY = 20;
 
-  const vals = sorted.map((l) => l.weightKg);
+  const vals = sorted.flatMap(({ weightKg, averageKg }) => [weightKg, averageKg]);
   const bounds = targetWeight ? [...vals, targetWeight] : vals;
   const minV = Math.min(...bounds) - 0.5;
   const maxV = Math.max(...bounds) + 0.5;
@@ -77,11 +85,13 @@ export const WeightSparkline = ({ logs, targetWeight }) => {
   const pts = sorted.map((item, idx) => ({
     x: getX(idx),
     y: getY(item.weightKg),
+    averageY: getY(item.averageKg),
     val: item.weightKg,
     label: item.date.slice(5)
   }));
 
   const lineD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  const averageD = pts.length > 1 ? smoothWeightPath(pts.map(({ x, averageY }) => ({ x, y: averageY }))) : '';
   const areaD =
     pts.length > 1
       ? `${lineD} L ${pts[pts.length - 1].x.toFixed(1)} ${height - 8} L ${pts[0].x.toFixed(1)} ${height - 8} Z`
@@ -90,7 +100,20 @@ export const WeightSparkline = ({ logs, targetWeight }) => {
 
   return (
     <div className="w-full">
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-32 overflow-visible">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 text-[10px] text-slate-600">
+        <span className="inline-flex items-center gap-1">
+          <span aria-hidden="true" className={pts.length > 1 ? 'w-3.5 border-t-2 border-indigo-500' : 'h-1.5 w-1.5 rounded-full bg-indigo-500'} />
+          每日体重
+        </span>
+        {averageD && (
+          <span className="inline-flex items-center gap-1">
+            <span aria-hidden="true" className="w-3.5 border-t-2 border-dashed border-slate-500" />
+            7日均值
+          </span>
+        )}
+        <span className="ml-auto font-semibold tabular-nums">7日均重 {sorted[sorted.length - 1].averageKg.toFixed(1)} kg</span>
+      </div>
+      <svg role="img" aria-label="体重趋势" viewBox={`0 0 ${width} ${height}`} className="w-full h-32 overflow-visible">
         <defs>
           <linearGradient id="weightFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#6366F1" stopOpacity="0.18" />
@@ -124,6 +147,9 @@ export const WeightSparkline = ({ logs, targetWeight }) => {
         {pts.length > 1 && (
           <path d={lineD} fill="none" stroke="#6366F1" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
         )}
+        {averageD && (
+          <path d={averageD} fill="none" stroke="#64748B" strokeWidth="2" strokeDasharray="4 4" strokeLinecap="round" />
+        )}
 
         {pts.map((p, i) => {
           const isFirst = i === 0;
@@ -152,10 +178,10 @@ export const WeightSparkline = ({ logs, targetWeight }) => {
           );
         })}
       </svg>
-      <div className="flex justify-between px-3 text-[10px] text-slate-400 tabular-nums -mt-1">
+      <div className={`flex px-3 text-[10px] text-slate-400 tabular-nums -mt-1 ${pts.length > 1 ? 'justify-between' : 'justify-center'}`}>
         <span>{pts[0].label}</span>
         {pts.length > 2 && <span>近 {pts.length} 次趋势</span>}
-        <span>{pts[pts.length - 1].label}</span>
+        {pts.length > 1 && <span>{pts[pts.length - 1].label}</span>}
       </div>
     </div>
   );

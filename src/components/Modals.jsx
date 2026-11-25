@@ -3,6 +3,8 @@ import { Plus, Search, X, Check } from 'lucide-react';
 import { FOOD_CATEGORIES, BUILTIN_FOODS } from '../data/foodCatalog.js';
 import { WORKOUT_PRESETS, INTENSITY_OPTIONS, MEAL_SECTIONS } from '../data/exercisePresets.js';
 import { getCurrentTimeStr } from '../utils/dateAndCalc.js';
+import { haptic } from '../utils/haptics.js';
+import { getRecentFoods } from '../utils/recentFoods.js';
 import { numberOptions } from '../utils/wheelOptions.js';
 import { BottomSheet } from './CommonUI.jsx';
 import { WheelPickerSheet } from './WheelPickerSheet.jsx';
@@ -11,7 +13,7 @@ const gramOptions = numberOptions(5, 1000, (value) => `${value} g`, 5);
 const durationOptions = numberOptions(1, 240, (value) => `${value} 分钟`);
 const burnedCalorieOptions = numberOptions(10, 2000, (value) => `${value} kcal`, 10);
 
-export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onClose, onAddMeal, onOpenCreateCustom }) {
+export function AddFoodBottomSheet({ open, mealType, selectedDate, todayStr, allFoods, mealLogs, onClose, onAddMeal, onOpenCreateCustom }) {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('全部');
   const [selectedFood, setSelectedFood] = useState(null);
@@ -36,11 +38,15 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
   }, [open]);
 
   const mealLabel = MEAL_SECTIONS.find((m) => m.key === mealType)?.label || '饮食';
+  const query = search.trim().toLowerCase();
+  const recentFoods = useMemo(
+    () => open && !query ? getRecentFoods(mealLogs, allFoods, todayStr) : [],
+    [open, query, allFoods, mealLogs, todayStr]
+  );
 
   // 模糊搜索（支持食物名 + 拼音/别名）与分类筛选
-  const filteredFoods = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return allFoods.filter((f) => {
+  const filteredFoods = useMemo(
+    () => allFoods.filter((f) => {
       const matchCat =
         category === '全部'
           ? true
@@ -48,27 +54,24 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
           ? Boolean(f.isCustom)
           : f.category === category;
       if (!matchCat) return false;
-      if (!q) return true;
+      if (!query) return true;
       return (
-        f.name.toLowerCase().includes(q) ||
-        (f.keywords && f.keywords.toLowerCase().includes(q)) ||
-        f.category.toLowerCase().includes(q)
+        f.name.toLowerCase().includes(query) ||
+        (f.keywords && f.keywords.toLowerCase().includes(query)) ||
+        f.category.toLowerCase().includes(query)
       );
-    });
-  }, [allFoods, category, search]);
+    }),
+    [allFoods, category, query]
+  );
 
   const handleSelectFood = (food) => {
-    document.activeElement?.blur();
+    searchInput.current?.blur();
+    const mode = food.unitName && food.unitGrams ? 'portion' : 'gram';
     setSelectedFood(food);
-    if (food.unitName && food.unitGrams) {
-      setCalcMode('portion');
-      setPortionCount(1);
-      setGrams(food.unitGrams);
-    } else {
-      setCalcMode('gram');
-      setGrams(100);
-      setPortionCount(1);
-    }
+    setCalcMode(mode);
+    setPortionCount(1);
+    setGrams(mode === 'portion' ? food.unitGrams : 100);
+    return mode;
   };
 
   function openAmountPicker(mode) {
@@ -154,12 +157,37 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
           </button>
         </div>
 
+        {recentFoods.length > 0 && (
+          <section aria-label="最近常吃" className="space-y-1.5">
+            <h3 className="text-[11px] font-semibold text-slate-500">最近常吃</h3>
+            <div className="flex gap-1.5 overflow-x-auto overscroll-none no-scrollbar pb-0.5">
+              {recentFoods.map((food) => (
+                <button
+                  key={food.id}
+                  type="button"
+                  aria-haspopup="dialog"
+                  onClick={() => {
+                    void haptic.tap();
+                    setPicker(handleSelectFood(food));
+                  }}
+                  className="shrink-0 whitespace-nowrap rounded-full border border-orange-100 bg-orange-50 px-3 py-1.5 text-[11px] font-semibold text-orange-700 transition active:scale-95"
+                >
+                  {food.name}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* 横向滚动 11 个分类胶囊 */}
         <div className="flex gap-1.5 overflow-x-auto overscroll-none no-scrollbar pb-0.5">
           {FOOD_CATEGORIES.map((cat) => (
             <button
               key={cat}
-              onClick={() => setCategory(cat)}
+              onClick={() => {
+                void haptic.tap();
+                setCategory(cat);
+              }}
               className={`px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition shrink-0 ${
                 category === cat ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200/70'
               }`}
@@ -252,6 +280,7 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
           <div className="grid grid-cols-2 bg-slate-100 p-1 rounded-xl">
             <button
               onClick={() => {
+                void haptic.tap();
                 setCalcMode('gram');
                 setGrams(effectiveGrams || 100);
               }}
@@ -264,6 +293,7 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
             <button
               onClick={() => {
                 if (selectedFood.unitName && selectedFood.unitGrams) {
+                  void haptic.tap();
                   setCalcMode('portion');
                 }
               }}
@@ -293,7 +323,10 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
                 {[50, 100, 150, 200].map((g) => (
                   <button
                     key={g}
-                    onClick={() => setGrams(g)}
+                    onClick={() => {
+                      void haptic.tap();
+                      setGrams(g);
+                    }}
                     className={`px-2.5 py-2.5 rounded-xl text-[11px] font-bold tabular-nums border transition ${
                       grams === g
                         ? 'bg-orange-500 text-white border-orange-500'
@@ -322,7 +355,10 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
                 {[0.5, 1, 1.5, 2].map((p) => (
                   <button
                     key={p}
-                    onClick={() => setPortionCount(p)}
+                    onClick={() => {
+                      void haptic.tap();
+                      setPortionCount(p);
+                    }}
                     className={`px-2.5 py-2 rounded-xl text-[11px] font-bold tabular-nums border transition ${
                       portionCount === p
                         ? 'bg-orange-500 text-white border-orange-500'
@@ -423,6 +459,7 @@ export function AddWorkoutBottomSheet({ open, initialType, selectedDate, current
             <button
               key={t.id}
               onClick={() => {
+                void haptic.tap();
                 setCategory(t.id);
                 setSelectedPreset(WORKOUT_PRESETS[t.id][0]);
                 setManualKcal(null);
@@ -444,6 +481,7 @@ export function AddWorkoutBottomSheet({ open, initialType, selectedDate, current
               <button
                 key={p.key}
                 onClick={() => {
+                  void haptic.tap();
                   setSelectedPreset(p);
                   setManualKcal(null);
                 }}
@@ -473,6 +511,7 @@ export function AddWorkoutBottomSheet({ open, initialType, selectedDate, current
               <button
                 key={opt.key}
                 onClick={() => {
+                  void haptic.tap();
                   setIntensity(opt.key);
                   setManualKcal(null);
                 }}
@@ -507,7 +546,10 @@ export function AddWorkoutBottomSheet({ open, initialType, selectedDate, current
             {[15, 30, 45, 60].map((m) => (
               <button
                 key={m}
-                onClick={() => changeDuration(m)}
+                onClick={() => {
+                  void haptic.tap();
+                  changeDuration(m);
+                }}
                 className={`py-1.5 rounded-xl text-xs font-semibold tabular-nums border ${
                   durationMin === m
                     ? 'bg-emerald-50 border-emerald-300 text-emerald-700'

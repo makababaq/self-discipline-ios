@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowDown, ArrowUp, ChevronRight, Dumbbell, Plus, RotateCcw } from 'lucide-react';
 import { uid } from '../utils/dateAndCalc.js';
+import { haptic } from '../utils/haptics.js';
 import { getTrainingSchedule, offsetForTrainingDay, TRAINING_PARTS } from '../utils/trainingPlan.js';
 import { BottomSheet } from './CommonUI.jsx';
 import { WheelPickerSheet } from './WheelPickerSheet.jsx';
@@ -12,7 +13,9 @@ function TrainingDayEditor({ day, index, dayCount, onSave, onDelete, onClose }) 
 
   function togglePart(part) {
     if (part === '休息') {
+      if (parts.length === 1 && parts[0] === '休息') return;
       setParts(['休息']);
+      void haptic.tap();
       return;
     }
 
@@ -23,6 +26,7 @@ function TrainingDayEditor({ day, index, dayCount, onSave, onDelete, onClose }) 
       else selected.add(part);
       return selected.size ? [...selected] : ['休息'];
     });
+    void haptic.tap();
   }
 
   return (

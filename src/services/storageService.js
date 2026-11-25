@@ -1,6 +1,5 @@
 import { Capacitor } from '@capacitor/core';
 import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
-import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Preferences } from '@capacitor/preferences';
 import { Share } from '@capacitor/share';
 import { StatusBar, Style } from '@capacitor/status-bar';
@@ -141,15 +140,6 @@ export async function initNativeUI() {
     await StatusBar.setStyle({ style: Style.Light });
   } catch {
     // Status bar customization is optional on platforms that do not expose it.
-  }
-}
-
-export async function triggerLightHaptic() {
-  if (!Capacitor.isNativePlatform()) return;
-  try {
-    await Haptics.impact({ style: ImpactStyle.Light });
-  } catch {
-    // Recording still works on devices without haptic feedback.
   }
 }
 

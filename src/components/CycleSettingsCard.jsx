@@ -3,6 +3,7 @@ import { Sparkles } from 'lucide-react';
 import { PickerField } from './PickerField.jsx';
 import { WheelPickerSheet } from './WheelPickerSheet.jsx';
 import { addDays, diffDays } from '../utils/dateAndCalc.js';
+import { haptic } from '../utils/haptics.js';
 import { numberOptions } from '../utils/wheelOptions.js';
 
 const cycleDayOptions = numberOptions(1, 365, (value) => `${value} 天`);
@@ -89,7 +90,9 @@ export function CycleSettingsCard({ settings, todayStr, onUpdateSettings, showTo
                 type="button"
                 aria-pressed={totalDays === d}
                 onClick={() => {
+                  if (totalDays === d) return;
                   updateCycleTotalDays(d);
+                  void haptic.tap();
                   showToast(`已切换为 ${d} 天自律周期`);
                 }}
                 className={`py-2 rounded-full text-[12px] font-bold tabular-nums border transition active:scale-95 ${

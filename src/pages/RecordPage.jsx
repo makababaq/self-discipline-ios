@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Droplets, Moon, Scale, Dumbbell, Footprints, Plus, Trash2, ChevronLeft, ChevronRight, Calendar, Star } from 'lucide-react';
 import { INTENSITY_OPTIONS, MEAL_SECTIONS, SLEEP_TAG_OPTIONS, SLEEP_QUALITY_LABELS } from '../data/exercisePresets.js';
 import { addDays, formatChineseHeaderDate, calcSleepMinutes, formatDurationShort, formatDurationCN } from '../utils/dateAndCalc.js';
+import { haptic } from '../utils/haptics.js';
 import { WeightSparkline } from '../components/CommonUI.jsx';
 import { WheelPickerSheet } from '../components/WheelPickerSheet.jsx';
 import { numberOptions, weightPicker } from '../utils/wheelOptions.js';
@@ -45,10 +46,12 @@ export function RecordPage({
   subTab,
   onChangeSubTab,
   data,
+  previousDayMeals,
   currentWeight,
   waterGoal,
   macroTargets,
   onOpenFoodSheet,
+  onCopyPreviousMeal,
   onDeleteMeal,
   onAddWater,
   onDeleteWater,
@@ -127,6 +130,13 @@ export function RecordPage({
 
   const toggleSleepTag = (tag) => {
     setSleepTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+    void haptic.tap();
+  };
+
+  const chooseSleepMode = (nap) => {
+    if (nap === isNap) return;
+    setIsNap(nap);
+    void haptic.tap();
   };
 
   const previewSleepMin = calcSleepMinutes(bedtime, wakeTime);
@@ -211,7 +221,11 @@ export function RecordPage({
           ].map((seg) => (
             <button
               key={seg.id}
-              onClick={() => onChangeSubTab(seg.id)}
+              onClick={() => {
+                if (subTab === seg.id) return;
+                onChangeSubTab(seg.id);
+                void haptic.tap();
+              }}
               className={`py-1.5 rounded-xl text-[12px] font-semibold transition-all ${
                 subTab === seg.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
@@ -264,14 +278,15 @@ export function RecordPage({
           {MEAL_SECTIONS.map((sec) => {
             const items = dayMeals.filter((m) => m.mealType === sec.key);
             const secKcal = items.reduce((s, i) => s + i.calories, 0);
+            const hasPreviousMeal = previousDayMeals.some((meal) => meal.mealType === sec.key);
             return (
               <div
                 key={sec.key}
                 className="rounded-2xl bg-white border border-slate-100 p-4 shadow-[0_2px_12px_rgba(15,23,42,0.025)]"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-8 h-8 rounded-xl bg-orange-50 flex items-center justify-center text-base">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="w-8 h-8 shrink-0 rounded-xl bg-orange-50 flex items-center justify-center text-base">
                       {sec.emoji}
                     </span>
                     <div>
@@ -281,13 +296,26 @@ export function RecordPage({
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => onOpenFoodSheet(sec.key)}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-orange-50 hover:bg-orange-100 text-orange-600 text-[12px] font-bold active:scale-95 transition"
-                  >
-                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                    添加食物
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {hasPreviousMeal && (
+                      <button
+                        type="button"
+                        aria-label={`复制昨日${sec.label}`}
+                        onClick={() => onCopyPreviousMeal(sec.key)}
+                        className="rounded-full bg-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 transition active:scale-95"
+                      >
+                        同昨日
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onOpenFoodSheet(sec.key)}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-orange-50 hover:bg-orange-100 text-orange-600 text-[12px] font-bold active:scale-95 transition"
+                    >
+                      <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                      添加食物
+                    </button>
+                  </div>
                 </div>
 
                 {items.length > 0 && (
@@ -496,6 +524,7 @@ export function RecordPage({
                         </span>
                         <button
                           onClick={() => onDeleteWorkout(w.id)}
+                          aria-label={`删除${w.name}训练记录`}
                           className="w-7 h-7 rounded-full text-slate-300 hover:text-rose-500 hover:bg-rose-50 flex items-center justify-center transition"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -529,7 +558,7 @@ export function RecordPage({
                 <button
                   type="button"
                   aria-pressed={!isNap}
-                  onClick={() => setIsNap(false)}
+                  onClick={() => chooseSleepMode(false)}
                   className={`px-2.5 py-1 rounded-lg transition ${
                     !isNap ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'
                   }`}
@@ -539,7 +568,7 @@ export function RecordPage({
                 <button
                   type="button"
                   aria-pressed={isNap}
-                  onClick={() => setIsNap(true)}
+                  onClick={() => chooseSleepMode(true)}
                   className={`px-2.5 py-1 rounded-lg transition ${
                     isNap ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'
                   }`}
@@ -572,7 +601,11 @@ export function RecordPage({
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button
                     key={star}
-                    onClick={() => setSleepQuality(star)}
+                    onClick={() => {
+                      if (sleepQuality === star) return;
+                      setSleepQuality(star);
+                      void haptic.tap();
+                    }}
                     className="p-0.5 active:scale-90 transition"
                     aria-label={`${star}星`}
                   >
@@ -690,7 +723,11 @@ export function RecordPage({
                   key={t}
                   type="button"
                   aria-pressed={weightTag === t}
-                  onClick={() => setWeightTag(t)}
+                  onClick={() => {
+                    if (weightTag === t) return;
+                    setWeightTag(t);
+                    void haptic.tap();
+                  }}
                   className={`flex-1 py-1.5 rounded-xl text-[11px] font-semibold border transition ${
                     weightTag === t
                       ? 'bg-indigo-50 border-indigo-200 text-indigo-600'

@@ -6,6 +6,7 @@ import {
 import { PickerField } from '../components/PickerField.jsx';
 import { WheelPickerSheet } from '../components/WheelPickerSheet.jsx';
 import { GOAL_PRESETS } from '../utils/calorieCalc.js';
+import { haptic } from '../utils/haptics.js';
 import { numberOptions, weightPicker } from '../utils/wheelOptions.js';
 
 const heightOptions = numberOptions(120, 230, (value) => `${value} cm`);
@@ -34,7 +35,11 @@ function CapsuleOptions({ label, options, selected, onSelect }) {
             key={value}
             type="button"
             aria-pressed={selected === value}
-            onClick={() => onSelect(value)}
+            onClick={() => {
+              if (selected === value) return;
+              onSelect(value);
+              void haptic.tap();
+            }}
             className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition active:scale-95 ${
               selected === value
                 ? 'border-slate-900 bg-slate-900 text-white'

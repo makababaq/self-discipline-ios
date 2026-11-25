@@ -4,12 +4,14 @@ import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Preferences } from '@capacitor/preferences';
 import { Share } from '@capacitor/share';
 import { StatusBar, Style } from '@capacitor/status-bar';
-import { createSeedData } from '../data/seedData.js';
+import { createSeedData, DATA_VERSION } from '../data/seedData.js';
+import { DEFAULT_PROFILE, GOAL_PRESETS } from '../utils/calorieCalc.js';
 
 export const STORAGE_KEY = 'discipline_ios_tracker_v2';
 
 const isText = (value) => typeof value === 'string';
 const isNumber = Number.isFinite;
+const isPositive = (value) => isNumber(value) && value > 0;
 const isDate = (value) => isText(value) && /^\d{4,}-\d{2}-\d{2}$/.test(value);
 const isBoolean = (value) => typeof value === 'boolean';
 const isTextList = (value) => Array.isArray(value) && value.every(isText);
@@ -20,11 +22,17 @@ const settingsFields = {
   cycleStartDate: isDate,
   cycleTotalDays: isNumber,
   cycleEndDate: isDate,
-  currentWeightKg: isNumber,
   targetWeightKg: isNumber,
-  dailyCalorieGoal: isNumber,
-  dailyWaterGoalMl: isNumber,
   dailySleepGoalHours: isNumber
+};
+
+const profileFields = {
+  gender: (value) => value === 'male' || value === 'female',
+  height: isPositive,
+  age: isPositive,
+  referenceWeight: isPositive,
+  activityLevel: (value) => value === 1.2 || value === 1.35,
+  goalType: (value) => isText(value) && Object.prototype.hasOwnProperty.call(GOAL_PRESETS, value)
 };
 
 const datedLogFields = { id: isText, date: isDate };
@@ -54,9 +62,9 @@ function hasFields(value, fields) {
   return isObject(value) && Object.entries(fields).every(([key, check]) => check(value[key]));
 }
 
-function parseBackup(raw) {
+function decodeBackup(raw) {
   const data = JSON.parse(raw.replace(/^\uFEFF/, ''));
-  if (!isObject(data) || data.version !== 2 || !hasFields(data.settings, settingsFields)) {
+  if (!isObject(data) || ![2, DATA_VERSION].includes(data.version) || !hasFields(data.settings, settingsFields)) {
     throw new Error('备份缺少有效的版本或设置');
   }
 
@@ -66,7 +74,20 @@ function parseBackup(raw) {
     }
   }
 
-  return data;
+  if (data.version === DATA_VERSION) {
+    if (!hasFields(data.settings.profile, profileFields)) throw new Error('备份缺少有效的个人资料');
+    return { data, migrated: false };
+  }
+
+  const { currentWeightKg, dailyCalorieGoal, dailyWaterGoalMl, ...settings } = data.settings;
+  const profile = {
+    ...DEFAULT_PROFILE,
+    referenceWeight: isPositive(currentWeightKg) ? currentWeightKg : DEFAULT_PROFILE.referenceWeight
+  };
+  return {
+    data: { ...data, version: DATA_VERSION, settings: { ...settings, profile } },
+    migrated: true
+  };
 }
 
 // Serialize hydration and saves so late native callbacks cannot overwrite newer records.
@@ -84,6 +105,12 @@ async function writeRaw(value) {
   } else {
     window.localStorage.setItem(STORAGE_KEY, value);
   }
+}
+
+async function loadStored(raw, fromLegacyWebView = false) {
+  const { data, migrated } = decodeBackup(raw);
+  if (migrated || fromLegacyWebView) await writeRaw(JSON.stringify(data));
+  return data;
 }
 
 export async function initNativeUI() {
@@ -105,13 +132,15 @@ export async function triggerLightHaptic() {
 }
 
 export const storageService = {
-  parseBackup,
+  parseBackup(raw) {
+    return decodeBackup(raw).data;
+  },
 
   loadAsync() {
     return queuePersistence(async () => {
       if (Capacitor.isNativePlatform()) {
         const { value } = await Preferences.get({ key: STORAGE_KEY });
-        if (value !== null) return parseBackup(value);
+        if (value !== null) return loadStored(value);
 
         // An earlier build may have saved to this app's WKWebView origin.
         let legacy = null;
@@ -120,14 +149,10 @@ export const storageService = {
         } catch (error) {
           if (error?.name !== 'SecurityError') throw error;
         }
-        if (legacy !== null) {
-          const data = parseBackup(legacy);
-          await writeRaw(legacy);
-          return data;
-        }
+        if (legacy !== null) return loadStored(legacy, true);
       } else {
         const raw = window.localStorage.getItem(STORAGE_KEY);
-        if (raw !== null) return parseBackup(raw);
+        if (raw !== null) return loadStored(raw);
       }
 
       const seed = createSeedData();

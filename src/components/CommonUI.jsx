@@ -162,11 +162,16 @@ export const WeightSparkline = ({ logs, targetWeight }) => {
 };
 
 /** 贴合 iPhone 视口的 iOS BottomSheet 弹窗 */
-export const BottomSheet = ({ open, onClose, title, subtitle, children, bodyClassName = 'px-5 py-4 pb-8' }) => {
+export const BottomSheet = ({
+  open, onClose, title, subtitle, children, bodyClassName = 'px-5 py-4 pb-8',
+  layerClassName = 'z-50', inactive = false
+}) => {
   if (!open) return null;
   return (
     <div
-      className="absolute inset-0 z-50 flex flex-col justify-end"
+      className={`absolute inset-0 flex flex-col justify-end ${layerClassName}`}
+      inert={inactive ? '' : undefined}
+      aria-hidden={inactive || undefined}
       style={{
         paddingLeft: 'env(safe-area-inset-left, 0px)',
         paddingRight: 'env(safe-area-inset-right, 0px)'
@@ -176,7 +181,7 @@ export const BottomSheet = ({ open, onClose, title, subtitle, children, bodyClas
       <div
         className="relative z-10 bg-white rounded-t-[28px] shadow-2xl flex flex-col animate-slideUp overflow-hidden"
         role="dialog"
-        aria-modal="true"
+        aria-modal={inactive ? undefined : true}
         aria-label={title}
         style={{
           maxHeight: 'min(89%, calc(100% - env(safe-area-inset-top, 0px) - 8px))',

@@ -3,6 +3,35 @@ import { Droplets, Moon, Scale, Dumbbell, Footprints, Plus, Trash2, ChevronLeft,
 import { INTENSITY_OPTIONS, MEAL_SECTIONS, SLEEP_TAG_OPTIONS, SLEEP_QUALITY_LABELS } from '../data/exercisePresets.js';
 import { addDays, formatChineseHeaderDate, calcSleepMinutes, formatDurationShort, formatDurationCN } from '../utils/dateAndCalc.js';
 import { WeightSparkline } from '../components/CommonUI.jsx';
+import { WheelPickerSheet } from '../components/WheelPickerSheet.jsx';
+import { numberOptions, weightPicker } from '../utils/wheelOptions.js';
+
+const padTime = (value) => String(value).padStart(2, '0');
+const waterColumns = [{ id: 'ml', label: '毫升', options: numberOptions(50, 1500, (ml) => `${ml} ml`, 50) }];
+const timeColumns = [
+  { id: 'hour', label: '小时', options: numberOptions(0, 23, padTime) },
+  { id: 'minute', label: '分钟', options: numberOptions(0, 55, padTime, 5) }
+];
+const napColumns = [{ id: 'duration', label: '时长', options: numberOptions(10, 180, (minutes) => `${minutes} 分钟`, 5) }];
+
+function RecordPickerField({ label, value, onClick }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-description={value}
+      aria-haspopup="dialog"
+      onClick={onClick}
+      className="flex w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 p-3 text-left transition active:scale-[0.98]"
+    >
+      <span className="min-w-0">
+        {value && <span className="mb-0.5 block text-[11px] font-medium text-slate-500">{label}</span>}
+        <span className="block text-sm font-bold text-slate-900 tabular-nums">{value ?? label}</span>
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+    </button>
+  );
+}
 
 export function RecordPage({
   todayStr,
@@ -11,6 +40,8 @@ export function RecordPage({
   subTab,
   onChangeSubTab,
   data,
+  currentWeight,
+  waterGoal,
   onOpenFoodSheet,
   onDeleteMeal,
   onAddWater,
@@ -22,6 +53,7 @@ export function RecordPage({
   onSaveWeight,
   onDeleteWeight
 }) {
+  const [picker, setPicker] = useState(null);
   const isToday = selectedDate === todayStr;
 
   const dayMeals = useMemo(() => data.mealLogs.filter((m) => m.date === selectedDate), [data.mealLogs, selectedDate]);
@@ -47,11 +79,15 @@ export function RecordPage({
     [dayMeals]
   );
 
-  // 饮水自定义输入
-  const [customWaterMl, setCustomWaterMl] = useState('');
   const totalWaterMl = dayWater.reduce((s, w) => s + w.ml, 0);
-  const waterGoal = data.settings.dailyWaterGoalMl;
   const waterPct = Math.min(100, Math.round((totalWaterMl / Math.max(1, waterGoal)) * 100));
+
+  const openWaterPicker = () => setPicker({
+    title: '自定义饮水',
+    initialValues: { ml: 250 },
+    columns: waterColumns,
+    onConfirm: ({ ml }) => onAddWater(ml, '自定义饮水')
+  });
 
   // 训练汇总
   const totalWorkoutMin = dayWorkouts.reduce((s, w) => s + w.durationMin, 0);
@@ -63,6 +99,10 @@ export function RecordPage({
   const [isNap, setIsNap] = useState(false);
   const [sleepQuality, setSleepQuality] = useState(4);
   const [sleepTags, setSleepTags] = useState(['入睡快', '深度好']);
+
+  useEffect(() => {
+    setIsNap(false);
+  }, [selectedDate]);
 
   useEffect(() => {
     const main = daySleeps.find((s) => !s.isNap);
@@ -85,19 +125,39 @@ export function RecordPage({
 
   const previewSleepMin = calcSleepMinutes(bedtime, wakeTime);
 
-  // 体重表单状态
-  const [weightInput, setWeightInput] = useState(String(data.settings.currentWeightKg));
+  const openTimePicker = (title, time, onSelect) => {
+    const [hour, minute] = time.split(':').map(Number);
+    setPicker({
+      title,
+      initialValues: { hour, minute },
+      columns: timeColumns,
+      onConfirm: ({ hour, minute }) => onSelect(`${padTime(hour)}:${padTime(minute)}`)
+    });
+  };
+
+  const openNapDurationPicker = () => setPicker({
+    title: '午睡时长',
+    initialValues: { duration: previewSleepMin },
+    columns: napColumns,
+    onConfirm: ({ duration }) => {
+      const [hour, minute] = bedtime.split(':').map(Number);
+      const end = (hour * 60 + minute + duration) % (24 * 60);
+      setWakeTime(`${padTime(Math.floor(end / 60))}:${padTime(end % 60)}`);
+    }
+  });
+
+  const dayWeight = data.weightLogs.find((log) => log.date === selectedDate);
+  const weightValue = dayWeight?.weightKg ?? currentWeight;
   const [weightTag, setWeightTag] = useState('晨起空腹');
 
   useEffect(() => {
-    const found = data.weightLogs.find((w) => w.date === selectedDate);
-    if (found) {
-      setWeightInput(String(found.weightKg));
-      setWeightTag(found.tag || '晨起空腹');
-    } else {
-      setWeightInput(String(data.settings.currentWeightKg));
-    }
-  }, [selectedDate, data.weightLogs, data.settings.currentWeightKg]);
+    setWeightTag(dayWeight?.tag || '晨起空腹');
+  }, [selectedDate, dayWeight]);
+
+  const openWeightPicker = () => setPicker({
+    title: '记录体重',
+    ...weightPicker(weightValue, (weight) => onSaveWeight(weight, weightTag), { min: 30, max: 150.9 })
+  });
 
   return (
     <div className="px-4 pt-2 pb-6 space-y-3.5">
@@ -305,27 +365,7 @@ export function RecordPage({
               ))}
             </div>
 
-            <div className="flex items-center gap-2 pt-1">
-              <input
-                type="number"
-                inputMode="numeric"
-                value={customWaterMl}
-                onChange={(e) => setCustomWaterMl(e.target.value)}
-                placeholder="自定义毫升数 (ml)"
-                className="flex-1 bg-slate-50 border border-slate-200/80 rounded-xl px-3.5 py-2.5 text-[13px] tabular-nums focus:outline-none focus:border-sky-400"
-              />
-              <button
-                onClick={() => {
-                  if (customWaterMl) {
-                    onAddWater(customWaterMl, '自定义饮水');
-                    setCustomWaterMl('');
-                  }
-                }}
-                className="px-4 py-2.5 rounded-xl bg-slate-900 text-white text-[13px] font-bold active:scale-95 transition shrink-0"
-              >
-                添加
-              </button>
-            </div>
+            <RecordPickerField label="自定义饮水" onClick={openWaterPicker} />
           </div>
 
           <div className="rounded-2xl bg-white border border-slate-100 p-4 shadow-[0_2px_12px_rgba(15,23,42,0.025)]">
@@ -475,6 +515,8 @@ export function RecordPage({
               </div>
               <div className="inline-flex bg-slate-100 p-0.5 rounded-xl text-[11px] font-semibold">
                 <button
+                  type="button"
+                  aria-pressed={!isNap}
                   onClick={() => setIsNap(false)}
                   className={`px-2.5 py-1 rounded-lg transition ${
                     !isNap ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'
@@ -483,6 +525,8 @@ export function RecordPage({
                   主睡眠
                 </button>
                 <button
+                  type="button"
+                  aria-pressed={isNap}
                   onClick={() => setIsNap(true)}
                   className={`px-2.5 py-1 rounded-lg transition ${
                     isNap ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'
@@ -494,32 +538,20 @@ export function RecordPage({
             </div>
 
             <div className="grid grid-cols-2 gap-2.5">
-              <label className="block bg-slate-50 rounded-xl p-3 border border-slate-100">
-                <span className="text-[11px] text-slate-400 font-medium block mb-1">入睡时间</span>
-                <input
-                  type="time"
-                  value={bedtime}
-                  onChange={(e) => setBedtime(e.target.value)}
-                  className="w-full bg-transparent text-[17px] font-bold text-slate-900 tabular-nums focus:outline-none"
-                />
-              </label>
-              <label className="block bg-slate-50 rounded-xl p-3 border border-slate-100">
-                <span className="text-[11px] text-slate-400 font-medium block mb-1">起床时间</span>
-                <input
-                  type="time"
-                  value={wakeTime}
-                  onChange={(e) => setWakeTime(e.target.value)}
-                  className="w-full bg-transparent text-[17px] font-bold text-slate-900 tabular-nums focus:outline-none"
-                />
-              </label>
+              <RecordPickerField label="入睡时间" value={bedtime} onClick={() => openTimePicker('入睡时间', bedtime, setBedtime)} />
+              <RecordPickerField label="起床时间" value={wakeTime} onClick={() => openTimePicker('起床时间', wakeTime, setWakeTime)} />
             </div>
 
-            <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-indigo-50/70">
-              <span className="text-[12px] text-indigo-700 font-medium">预计睡眠时长</span>
-              <span className="text-[15px] font-extrabold text-indigo-700 tabular-nums">
-                {formatDurationCN(previewSleepMin)}
-              </span>
-            </div>
+            {isNap ? (
+              <RecordPickerField label="午睡时长" value={formatDurationCN(previewSleepMin)} onClick={openNapDurationPicker} />
+            ) : (
+              <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-indigo-50/70">
+                <span className="text-[12px] text-indigo-700 font-medium">预计睡眠时长</span>
+                <span className="text-[15px] font-extrabold text-indigo-700 tabular-nums">
+                  {formatDurationCN(previewSleepMin)}
+                </span>
+              </div>
+            )}
 
             {/* 1-5 星质量评分 */}
             <div className="flex items-center justify-between bg-slate-50 rounded-xl px-3.5 py-2.5">
@@ -638,30 +670,14 @@ export function RecordPage({
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="flex-1 flex items-center bg-slate-50 border border-slate-200/80 rounded-xl px-3.5 py-2.5">
-                <input
-                  type="number"
-                  step="0.1"
-                  inputMode="decimal"
-                  value={weightInput}
-                  onChange={(e) => setWeightInput(e.target.value)}
-                  className="w-full bg-transparent text-[18px] font-extrabold text-slate-900 tabular-nums focus:outline-none"
-                />
-                <span className="text-xs font-semibold text-slate-400">kg</span>
-              </div>
-              <button
-                onClick={() => onSaveWeight(weightInput, weightTag)}
-                className="px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[13px] font-bold active:scale-95 transition shrink-0"
-              >
-                记录
-              </button>
-            </div>
+            <RecordPickerField label="记录体重" value={`${weightValue.toFixed(1)} kg`} onClick={openWeightPicker} />
 
             <div className="flex gap-2">
               {['晨起空腹', '运动后', '睡前'].map((t) => (
                 <button
                   key={t}
+                  type="button"
+                  aria-pressed={weightTag === t}
                   onClick={() => setWeightTag(t)}
                   className={`flex-1 py-1.5 rounded-xl text-[11px] font-semibold border transition ${
                     weightTag === t
@@ -701,6 +717,20 @@ export function RecordPage({
             </div>
           </div>
         </div>
+      )}
+
+      {picker && (
+        <WheelPickerSheet
+          open
+          title={picker.title}
+          initialValues={picker.initialValues}
+          columns={picker.columns}
+          onClose={() => setPicker(null)}
+          onConfirm={(values) => {
+            picker.onConfirm(values);
+            setPicker(null);
+          }}
+        />
       )}
     </div>
   );

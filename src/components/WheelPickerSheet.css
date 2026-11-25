@@ -1,0 +1,24 @@
+.wheel-picker-track {
+  height: calc(5 * var(--wheel-row-height));
+  overflow-y: auto;
+  overscroll-behavior-y: none;
+  scroll-snap-type: y mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wheel-picker-track::before,
+.wheel-picker-track::after {
+  display: block;
+  height: calc(2 * var(--wheel-row-height));
+  content: '';
+}
+
+.wheel-picker-option {
+  height: var(--wheel-row-height);
+  scroll-snap-align: center;
+}
+
+.wheel-picker-highlight {
+  top: calc(2 * var(--wheel-row-height));
+  height: var(--wheel-row-height);
+}

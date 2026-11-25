@@ -1,14 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Minus, Search, X, Check } from 'lucide-react';
+import { Plus, Search, X, Check } from 'lucide-react';
 import { FOOD_CATEGORIES, BUILTIN_FOODS } from '../data/foodCatalog.js';
 import { WORKOUT_PRESETS, INTENSITY_OPTIONS, MEAL_SECTIONS } from '../data/exercisePresets.js';
 import { getCurrentTimeStr } from '../utils/dateAndCalc.js';
+import { numberOptions } from '../utils/wheelOptions.js';
 import { BottomSheet } from './CommonUI.jsx';
+import { WheelPickerSheet } from './WheelPickerSheet.jsx';
+
+const gramOptions = numberOptions(5, 1000, (value) => `${value} g`, 5);
+const durationOptions = numberOptions(1, 240, (value) => `${value} 分钟`);
+const burnedCalorieOptions = numberOptions(10, 2000, (value) => `${value} kcal`, 10);
 
 export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onClose, onAddMeal, onOpenCreateCustom }) {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('全部');
   const [selectedFood, setSelectedFood] = useState(null);
+  const [picker, setPicker] = useState(null);
+  const searchInput = useRef(null);
 
   // 计算器模式：'gram'（按克数） | 'portion'（按份量）
   const [calcMode, setCalcMode] = useState('portion');
@@ -23,6 +31,7 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
       setCalcMode('portion');
       setGrams(100);
       setPortionCount(1);
+      setPicker(null);
     }
   }, [open]);
 
@@ -49,6 +58,7 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
   }, [allFoods, category, search]);
 
   const handleSelectFood = (food) => {
+    document.activeElement?.blur();
     setSelectedFood(food);
     if (food.unitName && food.unitGrams) {
       setCalcMode('portion');
@@ -60,6 +70,16 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
       setPortionCount(1);
     }
   };
+
+  function openAmountPicker(mode) {
+    searchInput.current?.blur();
+    setPicker(mode);
+  }
+
+  function goToCustomFoodSettings() {
+    searchInput.current?.blur();
+    onOpenCreateCustom();
+  }
 
   // 计算实际克数与实时营养素
   const effectiveGrams = useMemo(() => {
@@ -97,9 +117,10 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
     });
   };
 
-  return (
+  const foodSheet = (
     <BottomSheet
       open={open}
+      inactive={Boolean(picker)}
       onClose={onClose}
       title={`添加${mealLabel}食物`}
       subtitle={`内置 ${BUILTIN_FOODS.length} 种常见食物 · 支持拼音/别名搜索`}
@@ -111,23 +132,25 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
           <div className="flex-1 flex items-center gap-2 bg-slate-100 rounded-xl px-3 py-2">
             <Search className="w-4 h-4 text-slate-400 shrink-0" />
             <input
+              ref={searchInput}
               type="text"
+              aria-label="搜索食物"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="搜食物或拼音，如 鸡胸、mifan、拿铁..."
               className="w-full bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none"
             />
             {search && (
-              <button onClick={() => setSearch('')} className="text-slate-400 p-0.5">
+              <button onClick={() => setSearch('')} aria-label="清除搜索" className="text-slate-400 p-0.5">
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
           <button
-            onClick={onOpenCreateCustom}
+            onClick={goToCustomFoodSettings}
             className="px-2.5 py-2 rounded-xl bg-orange-50 text-orange-600 text-[11px] font-bold shrink-0 active:scale-95 transition"
           >
-            + 自定义
+            去设置添加
           </button>
         </div>
 
@@ -153,10 +176,10 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
           <div className="py-10 text-center space-y-2">
             <p className="text-xs text-slate-400">没有找到「{search}」相关食物</p>
             <button
-              onClick={onOpenCreateCustom}
+              onClick={goToCustomFoodSettings}
               className="text-xs font-bold text-orange-600 bg-orange-50 px-3.5 py-1.5 rounded-full"
             >
-              + 去添加自定义食物
+              去设置添加
             </button>
           </div>
         ) : (
@@ -255,18 +278,18 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
 
           {/* 模式 A：按克数 (g) */}
           {calcMode === 'gram' ? (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    value={grams}
-                    onChange={(e) => setGrams(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="w-full bg-transparent text-[16px] font-extrabold text-slate-900 tabular-nums focus:outline-none"
-                  />
-                  <span className="text-xs font-bold text-slate-400">g</span>
-                </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => openAmountPicker('gram')}
+                aria-haspopup="dialog"
+                aria-label={`选择克数，当前 ${grams} 克`}
+                className="flex-1 flex items-center justify-between gap-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[16px] font-extrabold text-slate-900 tabular-nums active:scale-95 transition"
+              >
+                {grams}
+                <span className="text-xs font-bold text-slate-400">g</span>
+              </button>
+              <div className="grid grid-cols-4 gap-1.5 shrink-0">
                 {[50, 100, 150, 200].map((g) => (
                   <button
                     key={g}
@@ -284,43 +307,31 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
             </div>
           ) : (
             /* 模式 B：按份量 (个/碗/杯/片) */
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                {/* 步进器 */}
-                <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl p-1 gap-1.5">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => openAmountPicker('portion')}
+                aria-haspopup="dialog"
+                aria-label={`选择份量，当前 ${portionCount.toFixed(1)} ${selectedFood.unitName}`}
+                className="min-w-0 flex-1 flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[16px] font-extrabold text-slate-900 tabular-nums active:scale-95 transition"
+              >
+                {portionCount.toFixed(1)}
+                <span className="truncate text-xs font-bold text-slate-400">{selectedFood.unitName}</span>
+              </button>
+              <div className="grid grid-cols-4 gap-1.5 shrink-0">
+                {[0.5, 1, 1.5, 2].map((p) => (
                   <button
-                    onClick={() => setPortionCount((c) => Math.max(0.5, Number((c - 0.5).toFixed(1))))}
-                    className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-700 active:scale-90 transition"
+                    key={p}
+                    onClick={() => setPortionCount(p)}
+                    className={`px-2.5 py-2 rounded-xl text-[11px] font-bold tabular-nums border transition ${
+                      portionCount === p
+                        ? 'bg-orange-500 text-white border-orange-500'
+                        : 'bg-white text-slate-600 border-slate-200'
+                    }`}
                   >
-                    <Minus className="w-3.5 h-3.5" />
+                    {p}
                   </button>
-                  <span className="min-w-[54px] text-center text-[13px] font-extrabold text-slate-900 tabular-nums">
-                    {portionCount} {selectedFood.unitName}
-                  </span>
-                  <button
-                    onClick={() => setPortionCount((c) => Math.min(20, Number((c + 0.5).toFixed(1))))}
-                    className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-700 active:scale-90 transition"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {/* 快捷份量按钮 0.5 / 1 / 1.5 / 2 */}
-                <div className="flex gap-1.5">
-                  {[0.5, 1, 1.5, 2].map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => setPortionCount(p)}
-                      className={`px-2.5 py-2 rounded-xl text-[11px] font-bold tabular-nums border transition ${
-                        portionCount === p
-                          ? 'bg-orange-500 text-white border-orange-500'
-                          : 'bg-white text-slate-600 border-slate-200'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
+                ))}
               </div>
             </div>
           )}
@@ -336,6 +347,32 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, allFoods, onC
       )}
     </BottomSheet>
   );
+
+  const pickingGrams = picker === 'gram';
+  const unit = pickingGrams ? 'g' : selectedFood?.unitName;
+  return (
+    <>
+      {foodSheet}
+      {picker && selectedFood && (
+        <WheelPickerSheet
+          open={open}
+          title={pickingGrams ? '选择克数' : '选择份量'}
+          initialValues={{ value: pickingGrams ? grams : portionCount }}
+          columns={[{
+            id: 'value',
+            label: unit,
+            options: pickingGrams ? gramOptions : numberOptions(0.5, 10, (value) => `${value.toFixed(1)} ${unit}`, 0.5)
+          }]}
+          onClose={() => setPicker(null)}
+          onConfirm={({ value }) => {
+            if (pickingGrams) setGrams(value);
+            else setPortionCount(value);
+            setPicker(null);
+          }}
+        />
+      )}
+    </>
+  );
 }
 
 export function AddWorkoutBottomSheet({ open, initialType, selectedDate, currentWeightKg, onClose, onAddWorkout }) {
@@ -343,7 +380,8 @@ export function AddWorkoutBottomSheet({ open, initialType, selectedDate, current
   const [selectedPreset, setSelectedPreset] = useState(WORKOUT_PRESETS.cardio[0]);
   const [intensity, setIntensity] = useState('medium');
   const [durationMin, setDurationMin] = useState(30);
-  const [manualKcal, setManualKcal] = useState('');
+  const [manualKcal, setManualKcal] = useState(null);
+  const [picker, setPicker] = useState(null);
 
   useEffect(() => {
     if (open) {
@@ -351,7 +389,8 @@ export function AddWorkoutBottomSheet({ open, initialType, selectedDate, current
       setSelectedPreset(WORKOUT_PRESETS[initialType][0]);
       setIntensity('medium');
       setDurationMin(30);
-      setManualKcal('');
+      setManualKcal(null);
+      setPicker(null);
     }
   }, [open, initialType]);
 
@@ -359,11 +398,18 @@ export function AddWorkoutBottomSheet({ open, initialType, selectedDate, current
   const activeMet = selectedPreset.met[intensity] ?? selectedPreset.met.medium;
   const weight = currentWeightKg > 0 ? currentWeightKg : 60;
   const autoKcal = Math.round((activeMet * weight * durationMin) / 60);
-  const finalKcal = manualKcal !== '' ? Math.max(0, parseInt(manualKcal, 10) || 0) : autoKcal;
+  const finalKcal = manualKcal ?? autoKcal;
 
-  return (
+  function changeDuration(minutes) {
+    if (minutes === durationMin) return;
+    setDurationMin(minutes);
+    setManualKcal(null);
+  }
+
+  const workoutSheet = (
     <BottomSheet
       open={open}
+      inactive={Boolean(picker)}
       onClose={onClose}
       title={category === 'cardio' ? '记录有氧训练' : '记录无氧训练'}
       subtitle={`按当前体重 ${weight.toFixed(1)}kg 与 ACSM MET 公式实时计算`}
@@ -379,7 +425,7 @@ export function AddWorkoutBottomSheet({ open, initialType, selectedDate, current
               onClick={() => {
                 setCategory(t.id);
                 setSelectedPreset(WORKOUT_PRESETS[t.id][0]);
-                setManualKcal('');
+                setManualKcal(null);
               }}
               className={`py-2 rounded-lg text-xs font-bold transition ${
                 category === t.id ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500'
@@ -399,7 +445,7 @@ export function AddWorkoutBottomSheet({ open, initialType, selectedDate, current
                 key={p.key}
                 onClick={() => {
                   setSelectedPreset(p);
-                  setManualKcal('');
+                  setManualKcal(null);
                 }}
                 className={`p-2.5 rounded-xl text-left border transition ${
                   active
@@ -428,7 +474,7 @@ export function AddWorkoutBottomSheet({ open, initialType, selectedDate, current
                 key={opt.key}
                 onClick={() => {
                   setIntensity(opt.key);
-                  setManualKcal('');
+                  setManualKcal(null);
                 }}
                 className={`py-2 rounded-xl text-xs font-bold border transition tabular-nums ${
                   intensity === opt.key
@@ -446,40 +492,22 @@ export function AddWorkoutBottomSheet({ open, initialType, selectedDate, current
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold text-slate-400">运动时长（分钟）</span>
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                inputMode="numeric"
-                value={durationMin}
-                onChange={(e) => {
-                  setDurationMin(Math.max(1, parseInt(e.target.value, 10) || 0));
-                  setManualKcal('');
-                }}
-                className="w-16 text-right bg-slate-100 rounded-lg px-2 py-1 text-sm font-extrabold text-slate-900 tabular-nums focus:outline-none"
-              />
-              <span className="text-xs text-slate-500">min</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => setPicker('duration')}
+              aria-haspopup="dialog"
+              aria-label={`选择训练时长，当前 ${durationMin} 分钟`}
+              className="flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-2 text-sm font-extrabold text-slate-900 tabular-nums active:scale-95 transition"
+            >
+              {durationMin}
+              <span className="text-xs font-semibold text-slate-500">分钟</span>
+            </button>
           </div>
-          <input
-            type="range"
-            min="5"
-            max="120"
-            step="5"
-            value={Math.min(120, durationMin)}
-            onChange={(e) => {
-              setDurationMin(Number(e.target.value));
-              setManualKcal('');
-            }}
-            className="w-full accent-emerald-500"
-          />
           <div className="grid grid-cols-4 gap-2">
             {[15, 30, 45, 60].map((m) => (
               <button
                 key={m}
-                onClick={() => {
-                  setDurationMin(m);
-                  setManualKcal('');
-                }}
+                onClick={() => changeDuration(m)}
                 className={`py-1.5 rounded-xl text-xs font-semibold tabular-nums border ${
                   durationMin === m
                     ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
@@ -499,17 +527,22 @@ export function AddWorkoutBottomSheet({ open, initialType, selectedDate, current
             <p className="text-[10px] text-emerald-600/80 tabular-nums mt-0.5">
               MET {activeMet} × {weight.toFixed(1)}kg × {durationMin}/60h = {autoKcal} kcal
             </p>
+            {manualKcal !== null && (
+              <button type="button" onClick={() => setManualKcal(null)} className="mt-1 rounded-md py-1 text-[11px] font-semibold text-emerald-800 underline underline-offset-2">
+                恢复自动
+              </button>
+            )}
           </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <input
-              type="number"
-              inputMode="numeric"
-              value={manualKcal === '' ? autoKcal : manualKcal}
-              onChange={(e) => setManualKcal(e.target.value)}
-              className="w-20 text-right bg-white border border-emerald-200 rounded-xl px-2 py-1 text-[16px] font-extrabold text-emerald-700 tabular-nums focus:outline-none"
-            />
+          <button
+            type="button"
+            onClick={() => setPicker('calories')}
+            aria-haspopup="dialog"
+            aria-label={`手动设置消耗热量，当前 ${finalKcal} 千卡`}
+            className="flex items-center gap-1 shrink-0 bg-white border border-emerald-200 rounded-xl px-2 py-2 text-[16px] font-extrabold text-emerald-700 tabular-nums active:scale-95 transition"
+          >
+            {finalKcal}
             <span className="text-[11px] font-semibold text-emerald-600">kcal</span>
-          </div>
+          </button>
         </div>
 
         <button
@@ -533,130 +566,194 @@ export function AddWorkoutBottomSheet({ open, initialType, selectedDate, current
       </div>
     </BottomSheet>
   );
+
+  const pickingDuration = picker === 'duration';
+  return (
+    <>
+      {workoutSheet}
+      {picker && (
+        <WheelPickerSheet
+          open={open}
+          title={pickingDuration ? '训练时长' : '消耗热量'}
+          initialValues={{ value: pickingDuration ? durationMin : finalKcal }}
+          columns={[{
+            id: 'value',
+            label: pickingDuration ? '分钟' : 'kcal',
+            options: pickingDuration ? durationOptions : burnedCalorieOptions
+          }]}
+          onClose={() => setPicker(null)}
+          onConfirm={({ value }) => {
+            if (pickingDuration) changeDuration(value);
+            else setManualKcal(value);
+            setPicker(null);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+const customFoodNumbers = {
+  kcal: { label: '热量', unit: 'kcal/100g', min: 0 },
+  unitGrams: { label: '每份克数', unit: 'g', min: 1 },
+  protein: { label: '蛋白质', unit: 'g', decimal: true },
+  carbs: { label: '碳水', unit: 'g', decimal: true },
+  fat: { label: '脂肪', unit: 'g', decimal: true }
+};
+const initialFoodNumbers = { kcal: null, unitGrams: 100, protein: 0, carbs: 0, fat: 0 };
+const customFoodCategories = FOOD_CATEGORIES.filter((category) => category !== '全部' && category !== '自定义');
+
+function foodNumberColumns(field, { whole }) {
+  if (field.decimal) {
+    return [
+      { id: 'whole', label: '整数', options: numberOptions(0, 100) },
+      { id: 'part', label: '小数', options: numberOptions(0, whole === 100 ? 0 : 9, (value) => `.${value}`) }
+    ];
+  }
+  return [
+    { id: 'whole', label: '百位', options: numberOptions(0, 99, (value) => String(value * 100)) },
+    { id: 'part', label: '余数', options: numberOptions(whole === 0 ? field.min : 0, 99) }
+  ];
 }
 
 export function CustomFoodBottomSheet({ open, onClose, onSave }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('轻食外食');
-  const [kcal, setKcal] = useState('');
   const [unitName, setUnitName] = useState('份');
-  const [unitGrams, setUnitGrams] = useState('100');
-  const [protein, setProtein] = useState('');
-  const [carbs, setCarbs] = useState('');
-  const [fat, setFat] = useState('');
+  const [numbers, setNumbers] = useState(initialFoodNumbers);
+  const [picker, setPicker] = useState(null);
 
   useEffect(() => {
     if (open) {
       setName('');
       setCategory('轻食外食');
-      setKcal('');
       setUnitName('份');
-      setUnitGrams('100');
-      setProtein('');
-      setCarbs('');
-      setFat('');
+      setNumbers(initialFoodNumbers);
+      setPicker(null);
     }
   }, [open]);
 
-  const selectableCategories = FOOD_CATEGORIES.filter((c) => c !== '全部' && c !== '自定义');
+  const field = customFoodNumbers[picker];
+  const currentValue = field ? numbers[picker] ?? 0 : 0;
+  const selection = field?.decimal
+    ? { whole: Math.floor(currentValue), part: Math.round(currentValue * 10) % 10 }
+    : { whole: Math.floor(currentValue / 100), part: currentValue % 100 };
+
+  const openPicker = (id) => {
+    document.activeElement?.blur();
+    setPicker(id);
+  };
+
+  const numberButton = (id) => {
+    const { label, unit } = customFoodNumbers[id];
+    const value = numbers[id];
+    return (
+      <button
+        type="button"
+        aria-label={label}
+        onClick={() => openPicker(id)}
+        className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition active:scale-95"
+      >
+        <span className="block text-[10px] font-medium text-slate-500">{label}</span>
+        <span className="block text-xs font-semibold text-slate-800 tabular-nums">
+          {value === null ? '请选择' : `${value} ${unit}`}
+        </span>
+      </button>
+    );
+  };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="新增自定义食物" subtitle="保存后可在「自定义」分类和搜索中立即使用">
-      <div className="space-y-3">
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="食物名称（必填，如：老乡鸡葱油鸡）"
-          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:border-slate-900"
-        />
-
-        <div className="grid grid-cols-2 gap-2">
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 focus:outline-none"
-          >
-            {selectableCategories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <input
-            type="number"
-            inputMode="numeric"
-            value={kcal}
-            onChange={(e) => setKcal(e.target.value)}
-            placeholder="热量 kcal/100g *"
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold tabular-nums focus:outline-none focus:border-slate-900"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
+    <>
+      <BottomSheet open={open && !picker} onClose={onClose} title="新增自定义食物" subtitle="保存后可在「自定义」分类和搜索中立即使用">
+        <div className="space-y-3">
           <input
             type="text"
-            value={unitName}
-            onChange={(e) => setUnitName(e.target.value)}
-            placeholder="默认份量单位（如 碗/个）"
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="食物名称（必填，如：老乡鸡葱油鸡）"
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:border-slate-900"
           />
-          <input
-            type="number"
-            inputMode="numeric"
-            value={unitGrams}
-            onChange={(e) => setUnitGrams(e.target.value)}
-            placeholder="每份约克数 (g)"
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs tabular-nums focus:outline-none"
-          />
-        </div>
 
-        <div className="grid grid-cols-3 gap-2">
-          <input
-            type="number"
-            value={protein}
-            onChange={(e) => setProtein(e.target.value)}
-            placeholder="蛋白 g (选填)"
-            className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs tabular-nums focus:outline-none"
-          />
-          <input
-            type="number"
-            value={carbs}
-            onChange={(e) => setCarbs(e.target.value)}
-            placeholder="碳水 g (选填)"
-            className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs tabular-nums focus:outline-none"
-          />
-          <input
-            type="number"
-            value={fat}
-            onChange={(e) => setFat(e.target.value)}
-            placeholder="脂肪 g (选填)"
-            className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs tabular-nums focus:outline-none"
-          />
-        </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              aria-label="食物分类"
+              onClick={() => openPicker('category')}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-xs font-semibold text-slate-700 active:scale-95 transition"
+            >
+              <span className="block text-[10px] font-medium text-slate-500">食物分类</span>
+              {category}
+            </button>
+            {numberButton('kcal')}
+          </div>
 
-        <button
-          onClick={() => {
-            if (!name.trim() || !kcal) return;
-            onSave({
-              name: name.trim(),
-              category,
-              kcalPer100g: Math.max(0, Number(kcal)),
-              unitName: unitName.trim() || '份',
-              unitGrams: Math.max(1, Number(unitGrams) || 100),
-              protein: Number(protein) || 0,
-              carbs: Number(carbs) || 0,
-              fat: Number(fat) || 0,
-              keywords: name.trim().toLowerCase()
-            });
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="text"
+              value={unitName}
+              onChange={(e) => setUnitName(e.target.value)}
+              placeholder="默认份量单位（如 碗/个）"
+              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none"
+            />
+            {numberButton('unitGrams')}
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            {numberButton('protein')}
+            {numberButton('carbs')}
+            {numberButton('fat')}
+          </div>
+
+          <button
+            onClick={() => {
+              if (!name.trim() || numbers.kcal === null) return;
+              onSave({
+                name: name.trim(),
+                category,
+                kcalPer100g: numbers.kcal,
+                unitName: unitName.trim() || '份',
+                unitGrams: numbers.unitGrams,
+                protein: numbers.protein,
+                carbs: numbers.carbs,
+                fat: numbers.fat,
+                keywords: name.trim().toLowerCase()
+              });
+            }}
+            disabled={!name.trim() || numbers.kcal === null}
+            className="w-full py-3 rounded-xl bg-slate-900 disabled:bg-slate-300 text-white text-sm font-bold active:scale-[0.98] transition"
+          >
+            保存到自定义食物库
+          </button>
+        </div>
+      </BottomSheet>
+      {field && (
+        <WheelPickerSheet
+          open={open}
+          title={`${field.label}（${field.unit}）`}
+          initialValues={selection}
+          columns={(values) => foodNumberColumns(field, values)}
+          onClose={() => setPicker(null)}
+          onConfirm={({ whole, part }) => {
+            const value = field.decimal ? whole + part / 10 : whole * 100 + part;
+            setNumbers((previous) => ({ ...previous, [picker]: value }));
+            setPicker(null);
           }}
-          disabled={!name.trim() || !kcal}
-          className="w-full py-3 rounded-xl bg-slate-900 disabled:bg-slate-300 text-white text-sm font-bold active:scale-[0.98] transition"
-        >
-          保存到自定义食物库
-        </button>
-      </div>
-    </BottomSheet>
+        />
+      )}
+      {picker === 'category' && (
+        <WheelPickerSheet
+          open={open}
+          title="食物分类"
+          initialValues={{ category }}
+          columns={[{ id: 'category', label: '分类', options: customFoodCategories.map((value) => ({ value, label: value })) }]}
+          onClose={() => setPicker(null)}
+          onConfirm={({ category: selectedCategory }) => {
+            setCategory(selectedCategory);
+            setPicker(null);
+          }}
+        />
+      )}
+    </>
   );
 }
 

@@ -3,9 +3,12 @@ import { SLEEP_QUALITY_LABELS } from '../data/exercisePresets.js';
 import { formatChineseHeaderDate, formatDurationShort } from '../utils/dateAndCalc.js';
 import { CalorieRing } from '../components/CommonUI.jsx';
 
-export function OverviewPage({ todayStr, settings, stats, onQuickWater, onJumpRecord, onJumpSettings }) {
+export function OverviewPage({ todayStr, settings, stats, targets, onQuickWater, onOpenWeight, onJumpRecord, onJumpSettings }) {
   const sleepTargetMin = Math.round(settings.dailySleepGoalHours * 60);
   const sleepMet = stats.lastSleep && stats.lastSleep.durationMin >= sleepTargetMin;
+  const { targetCalories, targetDeficit, goalLabel, recommendedWater, baselineTdee } = targets;
+  const balanceLabel = targetDeficit > 0 ? '目标缺口' : targetDeficit < 0 ? '目标盈余' : '目标平衡';
+  const weightStatus = stats.weightDelta > 0 ? `+${stats.weightDelta}` : stats.weightDelta || '持平';
 
   return (
     <div className="px-4 pt-3 pb-4 space-y-3.5">
@@ -16,7 +19,8 @@ export function OverviewPage({ todayStr, settings, stats, onQuickWater, onJumpRe
           <h1 className="text-[21px] font-bold tracking-tight text-slate-900 mt-0.5">自律日记</h1>
         </div>
         <button
-          onClick={() => onJumpRecord('sleepWeight')}
+          onClick={onOpenWeight}
+          aria-label={`记录今日体重，${stats.hasWeightRecord ? '最新' : '参考'} ${stats.latestWeight.toFixed(1)} kg`}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-slate-100 shadow-[0_2px_10px_rgba(15,23,42,0.04)] active:scale-95 transition"
         >
           <Scale className="w-3.5 h-3.5 text-indigo-500" />
@@ -25,10 +29,12 @@ export function OverviewPage({ todayStr, settings, stats, onQuickWater, onJumpRe
           </span>
           <span
             className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full tabular-nums ${
-              stats.weightDelta <= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'
+              !stats.hasWeightRecord
+                ? 'bg-slate-100 text-slate-500'
+                : stats.weightDelta <= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'
             }`}
           >
-            {stats.weightDelta > 0 ? `+${stats.weightDelta}` : stats.weightDelta === 0 ? '持平' : stats.weightDelta}
+            {stats.hasWeightRecord ? weightStatus : '参考'}
           </span>
         </button>
       </header>
@@ -94,7 +100,7 @@ export function OverviewPage({ todayStr, settings, stats, onQuickWater, onJumpRe
             </div>
           </div>
           <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full tabular-nums">
-            目标 {settings.dailyCalorieGoal} kcal
+            目标 {targetCalories} kcal
           </span>
         </div>
 
@@ -107,7 +113,7 @@ export function OverviewPage({ todayStr, settings, stats, onQuickWater, onJumpRe
                   {stats.netCalories}
                 </span>
                 <span className="text-[11px] font-medium text-slate-400 tabular-nums">
-                  / {settings.dailyCalorieGoal} kcal
+                  / {targetCalories} kcal
                 </span>
               </div>
             </div>
@@ -122,7 +128,13 @@ export function OverviewPage({ todayStr, settings, stats, onQuickWater, onJumpRe
             </div>
           </div>
 
-          <CalorieRing net={stats.netCalories} goal={settings.dailyCalorieGoal} />
+          <CalorieRing net={stats.netCalories} goal={targetCalories} />
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-2.5 text-[11px] font-semibold tabular-nums">
+          <span className="rounded-full bg-orange-50 px-2.5 py-1 text-orange-700">{goalLabel}</span>
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{balanceLabel} {Math.abs(targetDeficit)} kcal</span>
+          <span className="px-1 text-slate-500">日常消耗估算 {baselineTdee} kcal</span>
         </div>
       </section>
 
@@ -139,7 +151,7 @@ export function OverviewPage({ todayStr, settings, stats, onQuickWater, onJumpRe
             <div>
               <h2 className="text-[14px] font-bold text-slate-900">当日饮水量</h2>
               <p className="text-[10px] text-slate-400 tabular-nums">
-                建议 {settings.dailyWaterGoalMl} ml · 已完成 {stats.waterPercent}%
+                建议 {recommendedWater} ml · 已完成 {stats.waterPercent}%
               </p>
             </div>
           </div>
@@ -167,13 +179,13 @@ export function OverviewPage({ todayStr, settings, stats, onQuickWater, onJumpRe
                 {stats.todayWater}
               </span>
               <span className="text-xs font-medium text-slate-400 tabular-nums">
-                / {settings.dailyWaterGoalMl} ml
+                / {recommendedWater} ml
               </span>
             </div>
             <span className="text-[11px] font-semibold text-sky-600 tabular-nums">
-              {stats.todayWater >= settings.dailyWaterGoalMl
+              {stats.todayWater >= recommendedWater
                 ? '今日已达标'
-                : `还差 ${settings.dailyWaterGoalMl - stats.todayWater} ml`}
+                : `还差 ${recommendedWater - stats.todayWater} ml`}
             </span>
           </div>
           <div className="w-full h-2.5 rounded-full bg-sky-50 overflow-hidden p-0.5">

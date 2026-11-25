@@ -2,13 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, ClipboardList, LayoutGrid, Settings } from 'lucide-react';
 import { BottomSheet } from './components/CommonUI.jsx';
 import { AddFoodBottomSheet, AddWorkoutBottomSheet, CustomFoodBottomSheet, ImportJsonSheet } from './components/Modals.jsx';
+import { WheelPickerSheet } from './components/WheelPickerSheet.jsx';
 import { BUILTIN_FOODS } from './data/foodCatalog.js';
 import { createSeedData } from './data/seedData.js';
 import { OverviewPage } from './pages/OverviewPage.jsx';
 import { RecordPage } from './pages/RecordPage.jsx';
 import { SettingsPage } from './pages/SettingsPage.jsx';
 import { initNativeUI, storageService, triggerLightHaptic } from './services/storageService.js';
+import { calculateAutoTargets } from './utils/calorieCalc.js';
 import { diffDays, formatDurationShort, getCurrentTimeStr, toLocalDateStr, uid } from './utils/dateAndCalc.js';
+import { weightPicker } from './utils/wheelOptions.js';
 
 export default function App() {
   const [initialData, setInitialData] = useState(null);
@@ -61,6 +64,7 @@ function Tracker({ initialData }) {
   const [foodSheetMeal, setFoodSheetMeal] = useState(null);
   const [workoutSheetType, setWorkoutSheetType] = useState(null);
   const [showCustomFoodSheet, setShowCustomFoodSheet] = useState(false);
+  const [showWeightSheet, setShowWeightSheet] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
 
@@ -116,9 +120,18 @@ function Tracker({ initialData }) {
     return [...customMarked, ...BUILTIN_FOODS];
   }, [data.customFoods]);
 
+  const weightHistory = useMemo(() => [...data.weightLogs].sort((a, b) =>
+    b.date.localeCompare(a.date) || b.time.localeCompare(a.time)
+  ), [data.weightLogs]);
+  const latestWeight = weightHistory[0]?.weightKg ?? data.settings.profile.referenceWeight;
+  const targets = useMemo(() => calculateAutoTargets({
+    ...data.settings.profile,
+    currentWeight: latestWeight
+  }), [data.settings.profile, latestWeight]);
+
   // 概况页派生统计
   const overviewStats = useMemo(() => {
-    const { settings, mealLogs, waterLogs, workoutLogs, sleepLogs, weightLogs } = data;
+    const { settings, mealLogs, waterLogs, workoutLogs, sleepLogs } = data;
 
     // 1. 自律倒计时
     const totalDays = Math.max(1, diffDays(settings.cycleStartDate, settings.cycleEndDate) + 1);
@@ -134,7 +147,7 @@ function Tracker({ initialData }) {
 
     // 3. 今日饮水
     const todayWater = waterLogs.filter((w) => w.date === todayStr).reduce((s, w) => s + w.ml, 0);
-    const waterPercent = Math.min(100, Math.round((todayWater / Math.max(1, settings.dailyWaterGoalMl)) * 100));
+    const waterPercent = Math.min(100, Math.round((todayWater / Math.max(1, targets.recommendedWater)) * 100));
 
     // 4. 上一日睡眠（优先取今日起床主睡眠，否则取最近一次主睡眠）
     const mainSleeps = sleepLogs.filter((s) => !s.isNap);
@@ -144,9 +157,7 @@ function Tracker({ initialData }) {
       null;
 
     // 5. 最新体重与较前一次变化值 delta
-    const sortedWeights = [...weightLogs].sort((a, b) => b.date.localeCompare(a.date));
-    const latestWeight = sortedWeights[0]?.weightKg ?? settings.currentWeightKg;
-    const prevWeight = sortedWeights[1]?.weightKg ?? latestWeight;
+    const prevWeight = weightHistory[1]?.weightKg ?? latestWeight;
     const weightDelta = Number((latestWeight - prevWeight).toFixed(1));
 
     return {
@@ -161,9 +172,10 @@ function Tracker({ initialData }) {
       waterPercent,
       lastSleep,
       latestWeight,
+      hasWeightRecord: weightHistory.length > 0,
       weightDelta
     };
-  }, [data, todayStr]);
+  }, [data, latestWeight, targets.recommendedWater, todayStr, weightHistory]);
 
   // 快捷页面跳转
   const jumpToRecord = (subTab, date = todayStr) => {
@@ -226,25 +238,17 @@ function Tracker({ initialData }) {
     showToast('已删除睡眠记录');
   };
 
-  const saveWeightLog = (weightVal, tag) => {
+  const saveWeightLog = (weightVal, tag, date = selectedDate) => {
     const val = Number(parseFloat(weightVal).toFixed(1));
     if (isNaN(val) || val < 25 || val > 250) {
       showToast('请输入有效体重 (25~250 kg)', 'error');
       return;
     }
-    setData((prev) => {
-      const rest = prev.weightLogs.filter((w) => w.date !== selectedDate);
-      const nextLogs = [
-        ...rest,
-        { id: uid('wt'), date: selectedDate, weightKg: val, tag, time: getCurrentTimeStr() }
-      ];
-      const latest = [...nextLogs].sort((a, b) => b.date.localeCompare(a.date))[0];
-      return {
-        ...prev,
-        weightLogs: nextLogs,
-        settings: { ...prev.settings, currentWeightKg: latest ? latest.weightKg : val }
-      };
-    });
+    const entry = { id: uid('wt'), date, weightKg: val, tag, time: getCurrentTimeStr() };
+    setData((prev) => ({
+      ...prev,
+      weightLogs: [...prev.weightLogs.filter((w) => w.date !== date), entry]
+    }));
     showToast(`已记录体重 ${val.toFixed(1)} kg`);
   };
 
@@ -268,6 +272,19 @@ function Tracker({ initialData }) {
   const updateSettings = (patch) => {
     setData((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }));
   };
+
+  const updateProfile = (patch) => {
+    setData((prev) => ({
+      ...prev,
+      settings: { ...prev.settings, profile: { ...prev.settings.profile, ...patch } }
+    }));
+  };
+
+  const todayWeightLog = weightHistory.find((log) => log.date === todayStr);
+  const todayWeightPicker = showWeightSheet && weightPicker(todayWeightLog?.weightKg ?? latestWeight, (weight) => {
+    saveWeightLog(weight, todayWeightLog?.tag || '快捷记录', todayStr);
+    setShowWeightSheet(false);
+  }, { min: 30, max: 150.9 });
 
   // ---- JSON 导入/导出/复制/重置 ----
   const handleDownloadJSON = async () => {
@@ -344,7 +361,9 @@ function Tracker({ initialData }) {
             todayStr={todayStr}
             settings={data.settings}
             stats={overviewStats}
+            targets={targets}
             onQuickWater={(ml) => addWaterLog(ml, `快捷饮水 +${ml}ml`, todayStr)}
+            onOpenWeight={() => setShowWeightSheet(true)}
             onJumpRecord={jumpToRecord}
             onJumpSettings={() => setActiveTab('settings')}
           />
@@ -358,6 +377,8 @@ function Tracker({ initialData }) {
             subTab={recordSubTab}
             onChangeSubTab={setRecordSubTab}
             data={data}
+            currentWeight={latestWeight}
+            waterGoal={targets.recommendedWater}
             onOpenFoodSheet={(mealType) => setFoodSheetMeal(mealType)}
             onDeleteMeal={deleteMealLog}
             onAddWater={(ml, label) => addWaterLog(ml, label, selectedDate)}
@@ -374,10 +395,13 @@ function Tracker({ initialData }) {
         {activeTab === 'settings' && (
           <SettingsPage
             settings={data.settings}
+            targets={targets}
+            currentWeight={latestWeight}
             todayStr={todayStr}
             customFoods={data.customFoods}
             builtinCount={BUILTIN_FOODS.length}
             onUpdateSettings={updateSettings}
+            onUpdateProfile={updateProfile}
             onOpenAddFood={() => setShowCustomFoodSheet(true)}
             onDeleteCustomFood={deleteCustomFood}
             onDownloadJSON={handleDownloadJSON}
@@ -441,6 +465,7 @@ function Tracker({ initialData }) {
         }}
         onOpenCreateCustom={() => {
           setFoodSheetMeal(null);
+          setActiveTab('settings');
           setShowCustomFoodSheet(true);
         }}
       />
@@ -450,7 +475,7 @@ function Tracker({ initialData }) {
         open={Boolean(workoutSheetType)}
         initialType={workoutSheetType || 'cardio'}
         selectedDate={selectedDate}
-        currentWeightKg={data.settings.currentWeightKg}
+        currentWeightKg={latestWeight}
         onClose={() => setWorkoutSheetType(null)}
         onAddWorkout={(entry) => {
           addWorkoutLog(entry);
@@ -460,12 +485,19 @@ function Tracker({ initialData }) {
 
       {/* ==== 弹窗 3：自定义食物新增 ==== */}
       <CustomFoodBottomSheet
-        open={showCustomFoodSheet}
+        open={activeTab === 'settings' && showCustomFoodSheet}
         onClose={() => setShowCustomFoodSheet(false)}
         onSave={(food) => {
           addCustomFood(food);
           setShowCustomFoodSheet(false);
         }}
+      />
+
+      <WheelPickerSheet
+        open={showWeightSheet}
+        title="记录今日体重"
+        {...todayWeightPicker}
+        onClose={() => setShowWeightSheet(false)}
       />
 
       {/* ==== 弹窗 4：JSON 备份恢复 ==== */}

@@ -1,4 +1,4 @@
-import { Flame, Droplets, Moon, Scale, Sparkles, Clock, ArrowRight, Star, Dumbbell, ChevronRight, CircleCheck } from 'lucide-react';
+import { Flame, Droplets, Moon, Scale, Sparkles, Clock, ArrowRight, Star, Dumbbell, ChevronRight, CircleCheck, RefreshCw } from 'lucide-react';
 import { SLEEP_QUALITY_LABELS } from '../data/exercisePresets.js';
 import { formatChineseHeaderDate, formatDurationShort } from '../utils/dateAndCalc.js';
 import { CalorieRing } from '../components/CommonUI.jsx';
@@ -43,7 +43,7 @@ function TodayTrainingHint({ training, workoutLogged, todayBurned, onOpenTrainin
 }
 
 export function OverviewPage({
-  todayStr, settings, stats, targets, trainingToday,
+  todayStr, settings, stats, targets, trainingToday, aiBrief,
   onQuickWater, onOpenWeight, onJumpRecord, onJumpPlanning
 }) {
   const sleepTargetMin = Math.round(settings.dailySleepGoalHours * 60);
@@ -191,6 +191,8 @@ export function OverviewPage({
         </div>
       </section>
 
+      {aiBrief && <DailyBriefCard brief={aiBrief} />}
+
       {/* Card 3: 当日饮水量与建议饮水量（自带 +250ml 与 +500ml 一键快捷按钮）(Sky Blue) */}
       <section
         onClick={() => onJumpRecord('water')}
@@ -323,5 +325,34 @@ export function OverviewPage({
         )}
       </section>
     </div>
+  );
+}
+
+function DailyBriefCard({ brief }) {
+  const { hasData, text, loading, failed, canRefresh, onRefresh } = brief;
+  let detail = '正在生成简评…';
+  if (!hasData) detail = '记下今日首餐或睡眠后自动生成简评';
+  else if (!canRefresh) detail = '请在设置中补全 AI 接口地址和模型';
+  else if (failed) detail = '暂时无法生成简评，可轻触刷新重试';
+  else if (text) detail = text;
+
+  return (
+    <section aria-labelledby="daily-brief-title" className="rounded-2xl border border-slate-200/80 bg-slate-50/60 px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <h2 id="daily-brief-title" className="text-[13px] font-semibold text-slate-700">今日饮食与睡眠简评</h2>
+        {canRefresh && (
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={loading}
+            aria-label="刷新今日简评"
+            className="-my-2 -mr-2.5 grid h-9 w-9 place-items-center rounded-xl text-slate-500 active:bg-slate-200/70 disabled:opacity-40"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'motion-safe:animate-spin' : ''}`} />
+          </button>
+        )}
+      </div>
+      <p aria-live="polite" className="mt-2 break-words text-[13px] leading-relaxed text-slate-600">{detail}</p>
+    </section>
   );
 }

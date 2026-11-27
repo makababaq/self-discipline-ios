@@ -35,8 +35,7 @@ export const formatChineseHeaderDate = (dateStr) => {
 };
 
 /** 当前本地时间 HH:mm */
-export const getCurrentTimeStr = () => {
-  const now = new Date();
+export const getCurrentTimeStr = (now = new Date()) => {
   return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 };
 

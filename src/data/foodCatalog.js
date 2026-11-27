@@ -1,5 +1,8 @@
+import { EXTRA_FOOD_CATEGORIES, EXTRA_FOODS } from './expandedFoodLibrary.js';
+
 export const FOOD_CATEGORIES = [
   '全部',
+  ...EXTRA_FOOD_CATEGORIES,
   '主食谷物',
   '肉蛋禽',
   '水产海鲜',
@@ -12,7 +15,7 @@ export const FOOD_CATEGORIES = [
   '自定义'
 ];
 
-export const BUILTIN_FOODS = [
+const ORIGINAL_FOODS = [
   // -------------------- 主食谷物 (18 items) --------------------
   { id: 'f_s01', name: '米饭(熟)', category: '主食谷物', kcalPer100g: 116, protein: 2.6, carbs: 25.9, fat: 0.3, unitName: '碗', unitGrams: 150, keywords: 'mifan baimifan rice 大米饭' },
   { id: 'f_s02', name: '杂粮饭(熟)', category: '主食谷物', kcalPer100g: 124, protein: 3.3, carbs: 26.5, fat: 0.7, unitName: '碗', unitGrams: 150, keywords: 'zaliangfan culiang 五谷饭' },
@@ -144,3 +147,31 @@ export const BUILTIN_FOODS = [
   { id: 'f_o09', name: '牛肉荞麦冷面', category: '轻食外食', kcalPer100g: 122, protein: 7.4, carbs: 19.5, fat: 1.8, unitName: '碗', unitGrams: 340, keywords: 'lengmian qiaomai 荞麦面' },
   { id: 'f_o10', name: '清汤麻辣烫(素菜+牛肉标准份)', category: '轻食外食', kcalPer100g: 78, protein: 6.2, carbs: 6.5, fat: 3.0, unitName: '碗', unitGrams: 500, keywords: 'malatang qingtang 冒菜 外卖' }
 ];
+
+const nameKey = (name) => name.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+
+function mergeFoodLibrary() {
+  const foodsByName = new Map(ORIGINAL_FOODS.map((food) => [nameKey(food.name), food]));
+
+  for (const { kcal, unit, aliases, ...food } of EXTRA_FOODS) {
+    const key = nameKey(food.name);
+    const existing = foodsByName.get(key);
+    if (!existing) {
+      foodsByName.set(key, { ...food, kcalPer100g: kcal, unitName: unit, keywords: aliases });
+      continue;
+    }
+
+    // Keep the stored identity and nutrition for names already in the original catalog.
+    const additionalCategories = new Set(existing.additionalCategories);
+    if (food.category !== existing.category) additionalCategories.add(food.category);
+    foodsByName.set(key, {
+      ...existing,
+      keywords: [existing.keywords, aliases].filter(Boolean).join(' '),
+      additionalCategories: [...additionalCategories]
+    });
+  }
+
+  return [...foodsByName.values()];
+}
+
+export const BUILTIN_FOODS = mergeFoodLibrary();

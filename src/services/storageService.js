@@ -3,7 +3,8 @@ import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
 import { Preferences } from '@capacitor/preferences';
 import { Share } from '@capacitor/share';
 import { StatusBar, Style } from '@capacitor/status-bar';
-import { createSeedData, DATA_VERSION } from '../data/seedData.js';
+import { createAiCache, createSeedData, DATA_VERSION } from '../data/seedData.js';
+import { DEFAULT_AI_CONFIG } from '../utils/aiService.js';
 import { DEFAULT_PROFILE, GOAL_PRESETS } from '../utils/calorieCalc.js';
 import { createTrainingPlan } from '../utils/trainingPlan.js';
 
@@ -73,9 +74,42 @@ function isTrainingPlan(value) {
   ) && new Set(value.days.map(({ id }) => id)).size === value.days.length;
 }
 
+function normalizeAiConfig(value) {
+  const config = isObject(value) ? value : {};
+  const apiKeysByProvider = isObject(config.apiKeysByProvider)
+    ? Object.fromEntries(Object.entries(config.apiKeysByProvider).filter(([id, key]) => id.trim() && isText(key)))
+    : {};
+
+  return {
+    enabled: config.enabled === true && isText(config.baseUrl) && isText(config.model),
+    providerId: isNonEmptyText(config.providerId) ? config.providerId : DEFAULT_AI_CONFIG.providerId,
+    baseUrl: isText(config.baseUrl) ? config.baseUrl : DEFAULT_AI_CONFIG.baseUrl,
+    apiKey: isText(config.apiKey) ? config.apiKey : '',
+    apiKeysByProvider,
+    model: isText(config.model) ? config.model : DEFAULT_AI_CONFIG.model
+  };
+}
+
+function normalizeAiCache(value) {
+  const cache = createAiCache();
+  const { dailyBrief, dailyQuote } = isObject(value) ? value : {};
+  if (hasFields(dailyBrief, { date: isDate, fingerprint: isText, text: isText })) {
+    cache.dailyBrief = { date: dailyBrief.date, fingerprint: dailyBrief.fingerprint, text: dailyBrief.text };
+  }
+  if (hasFields(dailyQuote, { date: isDate, text: isText })) {
+    cache.dailyQuote = { date: dailyQuote.date, text: dailyQuote.text };
+  }
+  return cache;
+}
+
+function serializeBackup(data) {
+  const { enabled, providerId, baseUrl, model } = normalizeAiConfig(data.aiConfig);
+  return JSON.stringify({ ...data, aiConfig: { enabled, providerId, baseUrl, model }, aiCache: normalizeAiCache(data.aiCache) }, null, 2);
+}
+
 function decodeBackup(raw) {
   const data = JSON.parse(raw.replace(/^\uFEFF/, ''));
-  if (!isObject(data) || ![2, 3, DATA_VERSION].includes(data.version) || !hasFields(data.settings, settingsFields)) {
+  if (!isObject(data) || ![2, 3, 4, DATA_VERSION].includes(data.version) || !hasFields(data.settings, settingsFields)) {
     throw new Error('备份缺少有效的版本或设置');
   }
 
@@ -99,15 +133,21 @@ function decodeBackup(raw) {
     throw new Error('备份缺少有效的个人资料');
   }
 
-  const trainingPlan = data.version !== DATA_VERSION && data.trainingPlan === undefined
+  const trainingPlan = data.version < 4 && data.trainingPlan === undefined
     ? createTrainingPlan()
     : data.trainingPlan;
   if (!isTrainingPlan(trainingPlan)) throw new Error('备份缺少有效的训练安排');
-  if (data.version === DATA_VERSION) return { data, migrated: false };
 
   return {
-    data: { ...data, version: DATA_VERSION, settings, trainingPlan },
-    migrated: true
+    data: {
+      ...data,
+      version: DATA_VERSION,
+      settings,
+      trainingPlan,
+      aiConfig: normalizeAiConfig(data.aiConfig),
+      aiCache: normalizeAiCache(data.aiCache)
+    },
+    migrated: data.version !== DATA_VERSION
   };
 }
 
@@ -144,8 +184,15 @@ export async function initNativeUI() {
 }
 
 export const storageService = {
-  parseBackup(raw) {
-    return decodeBackup(raw).data;
+  parseBackup(raw, localData) {
+    const { data } = decodeBackup(raw);
+    // Keep the entire local connection together. A backup can contain a different endpoint.
+    const aiConfig = localData
+      ? normalizeAiConfig(localData.aiConfig)
+      : { ...data.aiConfig, enabled: false, apiKey: '', apiKeysByProvider: {} };
+    const aiCache = createAiCache();
+    aiCache.dailyQuote = localData ? normalizeAiCache(localData.aiCache).dailyQuote : data.aiCache.dailyQuote;
+    return { ...data, aiConfig, aiCache };
   },
 
   loadAsync() {
@@ -179,7 +226,7 @@ export const storageService = {
   },
 
   async copyBackup(data) {
-    const json = JSON.stringify(data, null, 2);
+    const json = serializeBackup(data);
     if (navigator.clipboard?.writeText) {
       try {
         await navigator.clipboard.writeText(json);
@@ -209,7 +256,7 @@ export const storageService = {
 
   async exportBackup(data, dateStr) {
     const fileName = `self-discipline-backup-${dateStr}.json`;
-    const json = JSON.stringify(data, null, 2);
+    const json = serializeBackup(data);
     if (Capacitor.isNativePlatform()) {
       const { uri } = await Filesystem.writeFile({
         path: fileName,

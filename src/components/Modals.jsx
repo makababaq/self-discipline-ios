@@ -12,6 +12,7 @@ import { WheelPickerSheet } from './WheelPickerSheet.jsx';
 const gramOptions = numberOptions(5, 1000, (value) => `${value} g`, 5);
 const durationOptions = numberOptions(1, 240, (value) => `${value} 分钟`);
 const burnedCalorieOptions = numberOptions(10, 2000, (value) => `${value} kcal`, 10);
+const countedPortionUnits = new Set(['串', '个', '块', '颗', '只', '片']);
 
 export function AddFoodBottomSheet({ open, mealType, selectedDate, todayStr, allFoods, mealLogs, onClose, onAddMeal, onOpenCreateCustom }) {
   const [search, setSearch] = useState('');
@@ -39,6 +40,7 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, todayStr, all
 
   const mealLabel = MEAL_SECTIONS.find((m) => m.key === mealType)?.label || '饮食';
   const query = search.trim().toLowerCase();
+  const usesCountedPortions = countedPortionUnits.has(selectedFood?.unitName);
   const recentFoods = useMemo(
     () => open && !query ? getRecentFoods(mealLogs, allFoods, todayStr) : [],
     [open, query, allFoods, mealLogs, todayStr]
@@ -52,13 +54,14 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, todayStr, all
           ? true
           : category === '自定义'
           ? Boolean(f.isCustom)
-          : f.category === category;
+          : f.category === category || f.additionalCategories?.includes(category);
       if (!matchCat) return false;
       if (!query) return true;
       return (
         f.name.toLowerCase().includes(query) ||
         (f.keywords && f.keywords.toLowerCase().includes(query)) ||
-        f.category.toLowerCase().includes(query)
+        f.category.toLowerCase().includes(query) ||
+        f.additionalCategories?.some((item) => item.toLowerCase().includes(query))
       );
     }),
     [allFoods, category, query]
@@ -179,11 +182,13 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, todayStr, all
           </section>
         )}
 
-        {/* 横向滚动 11 个分类胶囊 */}
-        <div className="flex gap-1.5 overflow-x-auto overscroll-none no-scrollbar pb-0.5">
+        {/* 横向滚动分类胶囊 */}
+        <div role="group" aria-label="食物分类" className="flex gap-1.5 overflow-x-auto overscroll-none no-scrollbar pb-0.5">
           {FOOD_CATEGORIES.map((cat) => (
             <button
               key={cat}
+              type="button"
+              aria-pressed={category === cat}
               onClick={() => {
                 void haptic.tap();
                 setCategory(cat);
@@ -352,7 +357,7 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, todayStr, all
                 <span className="truncate text-xs font-bold text-slate-400">{selectedFood.unitName}</span>
               </button>
               <div className="grid grid-cols-4 gap-1.5 shrink-0">
-                {[0.5, 1, 1.5, 2].map((p) => (
+                {(usesCountedPortions ? [1, 2, 5, 10] : [0.5, 1, 1.5, 2]).map((p) => (
                   <button
                     key={p}
                     onClick={() => {
@@ -397,7 +402,9 @@ export function AddFoodBottomSheet({ open, mealType, selectedDate, todayStr, all
           columns={[{
             id: 'value',
             label: unit,
-            options: pickingGrams ? gramOptions : numberOptions(0.5, 10, (value) => `${value.toFixed(1)} ${unit}`, 0.5)
+            options: pickingGrams
+              ? gramOptions
+              : numberOptions(0.5, usesCountedPortions ? 30 : 10, (value) => `${value.toFixed(1)} ${unit}`, 0.5)
           }]}
           onClose={() => setPicker(null)}
           onConfirm={({ value }) => {

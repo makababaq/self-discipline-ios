@@ -6,6 +6,7 @@ import { WheelPickerSheet } from './components/WheelPickerSheet.jsx';
 import { BUILTIN_FOODS } from './data/foodCatalog.js';
 import { MEAL_SECTIONS } from './data/exercisePresets.js';
 import { createSeedData } from './data/seedData.js';
+import { useDailyAi } from './hooks/useDailyAi.js';
 import { OverviewPage } from './pages/OverviewPage.jsx';
 import { PlanningPage } from './pages/PlanningPage.jsx';
 import { RecordPage } from './pages/RecordPage.jsx';
@@ -117,7 +118,7 @@ function Tracker({ initialData }) {
     toastRef.current = setTimeout(() => setToast(null), 2200);
   };
 
-  // 合并内置 113 种食物与自定义食物
+  // 合并内置与自定义食物
   const allFoods = useMemo(() => {
     const customMarked = data.customFoods.map((f) => ({ ...f, isCustom: true }));
     return [...customMarked, ...BUILTIN_FOODS];
@@ -149,7 +150,13 @@ function Tracker({ initialData }) {
     const cyclePercent = Math.round((elapsedDays / totalDays) * 100);
 
     // 2. 今日净热量
-    const todayIntake = mealLogs.filter((m) => m.date === todayStr).reduce((s, m) => s + m.calories, 0);
+    const todayMeals = mealLogs.filter((meal) => meal.date === todayStr);
+    const todayIntake = todayMeals.reduce((sum, meal) => sum + meal.calories, 0);
+    const todayMacros = todayMeals.reduce((totals, meal) => ({
+      protein: totals.protein + meal.protein,
+      carbs: totals.carbs + meal.carbs,
+      fat: totals.fat + meal.fat
+    }), { protein: 0, carbs: 0, fat: 0 });
     const todayWorkouts = workoutLogs.filter((workout) => workout.date === todayStr);
     const todayBurned = todayWorkouts.reduce((sum, workout) => sum + workout.caloriesBurned, 0);
     const netCalories = todayIntake - todayBurned;
@@ -160,6 +167,7 @@ function Tracker({ initialData }) {
 
     // 4. 上一日睡眠（优先取今日起床主睡眠，否则取最近一次主睡眠）
     const mainSleeps = sleepLogs.filter((s) => !s.isNap);
+    const sleepMinutes = sleepLogs.reduce((sum, sleep) => sleep.date === todayStr ? sum + sleep.durationMin : sum, 0);
     const lastSleep =
       mainSleeps.find((s) => s.date === todayStr) ||
       [...mainSleeps].sort((a, b) => b.date.localeCompare(a.date))[0] ||
@@ -175,17 +183,22 @@ function Tracker({ initialData }) {
       remainingDays,
       cyclePercent,
       todayIntake,
+      todayMeals,
+      todayMacros,
       todayWorkouts,
       todayBurned,
       netCalories,
       todayWater,
       waterPercent,
       lastSleep,
+      sleepMinutes,
       latestWeight,
       hasWeightRecord: weightHistory.length > 0,
       weightDelta
     };
   }, [data, latestWeight, targets.recommendedWater, todayStr, weightHistory]);
+
+  const { brief, quote } = useDailyAi({ data, todayStr, targets, stats: overviewStats, trainingToday, activeTab, setData });
 
   const changeTab = (tab) => {
     if (tab === activeTab) return;
@@ -225,6 +238,24 @@ function Tracker({ initialData }) {
     setData((prev) => ({ ...prev, mealLogs: [...prev.mealLogs, saved] }));
     void haptic.meal(false);
     showToast(`已添加 ${entry.name} (${entry.calories} kcal)`);
+  };
+
+  const addEstimatedMeals = (mealType, items) => {
+    const meal = MEAL_SECTIONS.find((section) => section.key === mealType);
+    if (!meal || !items.length) return;
+
+    const now = new Date();
+    const date = toLocalDateStr(now);
+    const time = getCurrentTimeStr(now);
+    const entries = items.map(({ name, grams, calories, protein, carbs, fat }) => ({
+      id: uid('m'), date, time, mealType, name, grams, calories, protein, carbs, fat,
+      foodId: '',
+      portionText: `${grams}g`
+    }));
+    setData((previous) => ({ ...previous, mealLogs: [...previous.mealLogs, ...entries] }));
+    setSelectedDate(date);
+    void haptic.meal(false);
+    showToast(`已记入今日${meal.label}（${entries.length}项）`);
   };
 
   const copyPreviousMeal = (mealType) => {
@@ -312,6 +343,10 @@ function Tracker({ initialData }) {
     setData((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }));
   };
 
+  const updateAiConfig = (update) => {
+    setData((previous) => ({ ...previous, aiConfig: update(previous.aiConfig) }));
+  };
+
   const updateTrainingPlan = (update) => {
     setData((prev) => ({ ...prev, trainingPlan: update(prev.trainingPlan) }));
   };
@@ -352,7 +387,7 @@ function Tracker({ initialData }) {
 
   const handleImportJSON = (raw) => {
     try {
-      setData(storageService.parseBackup(raw));
+      setData(storageService.parseBackup(raw, data));
       setShowImportModal(false);
       showToast('本地数据恢复成功');
     } catch {
@@ -406,6 +441,7 @@ function Tracker({ initialData }) {
             stats={overviewStats}
             targets={targets}
             trainingToday={trainingToday}
+            aiBrief={brief}
             onQuickWater={(ml) => addWaterLog(ml, `快捷饮水 +${ml}ml`, todayStr)}
             onOpenWeight={() => setShowWeightSheet(true)}
             onJumpRecord={jumpToRecord}
@@ -428,6 +464,8 @@ function Tracker({ initialData }) {
             currentWeight={latestWeight}
             waterGoal={targets.recommendedWater}
             macroTargets={targets.macros}
+            aiConfig={data.aiConfig}
+            onAddEstimatedMeals={addEstimatedMeals}
             onOpenFoodSheet={(mealType) => setFoodSheetMeal(mealType)}
             onCopyPreviousMeal={copyPreviousMeal}
             onDeleteMeal={deleteMealLog}
@@ -449,6 +487,7 @@ function Tracker({ initialData }) {
             settings={data.settings}
             todayStr={todayStr}
             trainingPlan={data.trainingPlan}
+            dailyQuote={quote}
             onUpdateSettings={updateSettings}
             onUpdateTrainingPlan={updateTrainingPlan}
             showToast={showToast}
@@ -462,6 +501,8 @@ function Tracker({ initialData }) {
             currentWeight={latestWeight}
             customFoods={data.customFoods}
             builtinCount={BUILTIN_FOODS.length}
+            aiConfig={data.aiConfig}
+            onUpdateAiConfig={updateAiConfig}
             onUpdateSettings={updateSettings}
             onUpdateProfile={updateProfile}
             onOpenAddFood={() => setShowCustomFoodSheet(true)}
@@ -510,7 +551,7 @@ function Tracker({ initialData }) {
         </div>
       </nav>
 
-      {/* ==== 弹窗 1：113+ 常见食物搜索 + 克数/份量双模式换算 ==== */}
+      {/* ==== 弹窗 1：常见食物搜索 + 克数/份量双模式换算 ==== */}
       <AddFoodBottomSheet
         open={Boolean(foodSheetMeal)}
         mealType={foodSheetMeal}

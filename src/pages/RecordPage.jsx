@@ -4,6 +4,7 @@ import { INTENSITY_OPTIONS, MEAL_SECTIONS, SLEEP_TAG_OPTIONS, SLEEP_QUALITY_LABE
 import { addDays, formatChineseHeaderDate, calcSleepMinutes, formatDurationShort, formatDurationCN } from '../utils/dateAndCalc.js';
 import { haptic } from '../utils/haptics.js';
 import { WeightSparkline } from '../components/CommonUI.jsx';
+import { AiDietEstimator } from '../components/AiDietEstimator.jsx';
 import { WheelPickerSheet } from '../components/WheelPickerSheet.jsx';
 import { numberOptions, weightPicker } from '../utils/wheelOptions.js';
 
@@ -46,6 +47,8 @@ export function RecordPage({
   subTab,
   onChangeSubTab,
   data,
+  aiConfig,
+  onAddEstimatedMeals,
   previousDayMeals,
   currentWeight,
   waterGoal,
@@ -273,6 +276,8 @@ export function RecordPage({
               })}
             </dl>
           </div>
+
+          {aiConfig?.enabled && <AiDietEstimator aiConfig={aiConfig} onAddEstimatedMeals={onAddEstimatedMeals} />}
 
           {/* 早餐 / 午餐 / 晚餐 / 加餐 */}
           {MEAL_SECTIONS.map((sec) => {

@@ -4,6 +4,7 @@ import {
   Trash2, Upload, Utensils
 } from 'lucide-react';
 import { PickerField } from '../components/PickerField.jsx';
+import { AiSettingsCard } from '../components/AiSettingsCard.jsx';
 import { WheelPickerSheet } from '../components/WheelPickerSheet.jsx';
 import { GOAL_PRESETS } from '../utils/calorieCalc.js';
 import { haptic } from '../utils/haptics.js';
@@ -56,6 +57,8 @@ function CapsuleOptions({ label, options, selected, onSelect }) {
 
 export function SettingsPage({
   settings,
+  aiConfig,
+  onUpdateAiConfig,
   targets,
   currentWeight,
   customFoods,
@@ -195,6 +198,8 @@ export function SettingsPage({
           </p>
         )}
       </section>
+
+      <AiSettingsCard aiConfig={aiConfig} onUpdateAiConfig={onUpdateAiConfig} />
 
       {/* 自定义食物库 */}
       <section className="rounded-2xl bg-white border border-slate-100 p-4 shadow-[0_2px_12px_rgba(15,23,42,0.025)] space-y-3">
